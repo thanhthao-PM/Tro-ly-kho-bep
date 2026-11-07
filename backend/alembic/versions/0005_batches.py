@@ -1,48 +1,65 @@
-"""0005 batches (Rev 3 II.2, Rev 4 4.1/4.2). Triggers come in 0009."""
+"""0005: Inventory Batches
+
+Revision ID: 0005
+Revises: 0004
+Create Date: 2026-11-07 10:20:00
+
+"""
 from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "0005"
 down_revision = "0004"
 branch_labels = None
 depends_on = None
 
-UP = [
-"""CREATE TABLE batches (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kitchen_id uuid NOT NULL REFERENCES kitchens (id),
-  ingredient_id uuid NOT NULL,
-  received_on date NOT NULL,
-  expiry_date date,
-  initial_qty numeric(14,3) NOT NULL,
-  remaining_qty numeric(14,3) NOT NULL DEFAULT 0,
-  unit_cost numeric(18,6) NOT NULL,
-  location text NOT NULL,
-  source_document_line_id uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT uq_batches_kid UNIQUE (kitchen_id, id),
-  CONSTRAINT uq_batches_kid_ing UNIQUE (kitchen_id, ingredient_id, id),
-  CONSTRAINT fk_batches_ingredient FOREIGN KEY (kitchen_id, ingredient_id) REFERENCES ingredients (kitchen_id, id),
-  CONSTRAINT fk_batches_docline FOREIGN KEY (kitchen_id, source_document_line_id) REFERENCES document_lines (kitchen_id, id),
-  CONSTRAINT ck_batches_initial CHECK (initial_qty > 0),
-  CONSTRAINT ck_batches_remaining CHECK (remaining_qty >= 0),
-  CONSTRAINT ck_batches_cost CHECK (unit_cost >= 0),
-  CONSTRAINT ck_batches_location CHECK (location IN ('FRIDGE','FREEZER','PANTRY')),
-  CONSTRAINT ck_batches_expiry CHECK (expiry_date IS NULL OR expiry_date >= received_on)
-)""",
-"""CREATE INDEX ix_batches_fefo ON batches (kitchen_id, ingredient_id, expiry_date NULLS LAST, received_on, id)
-  WHERE remaining_qty > 0""",
-"CREATE INDEX ix_batches_expiring ON batches (kitchen_id, expiry_date) WHERE remaining_qty > 0",
-"CREATE INDEX ix_batches_received ON batches (kitchen_id, received_on)",
-"CREATE INDEX ix_batches_history ON batches (kitchen_id, ingredient_id, received_on)",
-]
-DOWN = ["DROP TABLE batches"]
-
 
 def upgrade() -> None:
-    for s in UP:
-        op.execute(s)
+    op.create_table(
+        "batches",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("kitchen_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("ingredient_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("received_on", sa.Date(), nullable=False),
+        sa.Column("expiry_date", sa.Date(), nullable=True),
+        sa.Column("initial_qty", sa.Numeric(14, 3), nullable=False),
+        sa.Column("remaining_qty", sa.Numeric(14, 3), server_default="0", nullable=False),
+        sa.Column("unit_cost", sa.Numeric(18, 6), nullable=False),
+        sa.Column("location", sa.Text(), nullable=False),
+        sa.Column("source_document_line_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["kitchen_id", "ingredient_id"],
+            ["ingredients.kitchen_id", "ingredients.id"],
+            ondelete="RESTRICT",
+            name="fk_batches_ingredient"
+        ),
+        sa.UniqueConstraint("kitchen_id", "id", name="uq_batches_kitchen_id"),
+        sa.UniqueConstraint("kitchen_id", "ingredient_id", "id", name="uq_batches_kitchen_ingredient_id"),
+        sa.CheckConstraint("initial_qty > 0", name="chk_batches_initial_qty_positive"),
+        sa.CheckConstraint("remaining_qty >= 0", name="chk_batches_remaining_qty_non_negative"),
+        sa.CheckConstraint("unit_cost >= 0", name="chk_batches_unit_cost_non_negative"),
+        sa.CheckConstraint("location IN ('FRIDGE', 'FREEZER', 'PANTRY')", name="chk_batches_location"),
+        sa.CheckConstraint("expiry_date IS NULL OR expiry_date >= received_on", name="chk_batches_expiry_valid"),
+    )
+    op.create_index(
+        "idx_batches_fefo",
+        "batches",
+        ["kitchen_id", "ingredient_id", "expiry_date", "received_on", "id"],
+        postgresql_where=sa.text("remaining_qty > 0")
+    )
+    op.create_index(
+        "idx_batches_expiring",
+        "batches",
+        ["kitchen_id", "expiry_date"],
+        postgresql_where=sa.text("remaining_qty > 0")
+    )
+    op.create_index("idx_batches_received", "batches", ["kitchen_id", "received_on"])
 
 
 def downgrade() -> None:
-    for s in DOWN:
-        op.execute(s)
+    op.drop_index("idx_batches_received", table_name="batches")
+    op.drop_index("idx_batches_expiring", table_name="batches")
+    op.drop_index("idx_batches_fefo", table_name="batches")
+    op.drop_table("batches")

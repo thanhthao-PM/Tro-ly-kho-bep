@@ -1,0 +1,78 @@
+# ==============================================================================
+# DOCKER COMPOSE CONFIGURATION CHO DỰ ÁN TRỢ LÝ KHO BẾP
+# Tuân thủ Architecture Revision 6.3 - Triển khai một chạm (One-Command Deployment)
+# ==============================================================================
+services:
+  # 1. Cơ sở dữ liệu PostgreSQL 16 (Lưu trữ bền vững)
+  postgres:
+    image: postgres:16-alpine
+    container_name: kitchen_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_123}
+      POSTGRES_DB: ${POSTGRES_DB:-kitchen_inventory}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kitchen_inventory}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Migration & Seed Runner (Tự động khởi tạo schema và dữ liệu demo)
+  migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kitchen_migration
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
+      ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
+    command: ["sh", "-c", "alembic upgrade head && python -m app.db.seed --demo"]
+
+  # 3. Dịch vụ Backend Python FastAPI
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kitchen_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
+      ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_123456}
+      APP_ENV: ${APP_ENV:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    ports:
+      - "8000:8000"
+
+  # 4. Dịch vụ Frontend React + Node.js Runner
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kitchen_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      PORT: 3000
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+    name: kitchen_postgres_data

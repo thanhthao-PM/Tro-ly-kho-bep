@@ -1,45 +1,54 @@
-"""0007 disposals (Rev 3 II.2, Rev 4 4.1/4.2)"""
+"""0007: Disposals (Donation, Selloff, Waste)
+
+Revision ID: 0007
+Revises: 0006
+Create Date: 2026-11-07 10:30:00
+
+"""
 from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "0007"
 down_revision = "0006"
 branch_labels = None
 depends_on = None
 
-UP = [
-"""CREATE TABLE disposals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kitchen_id uuid NOT NULL REFERENCES kitchens (id),
-  batch_id uuid NOT NULL,
-  type text NOT NULL,
-  quantity numeric(14,3) NOT NULL,
-  occurred_on date NOT NULL,
-  reason_code text,
-  note text,
-  counterparty_name text,
-  revenue_vnd bigint,
-  created_by uuid REFERENCES user_profiles (id),
-  CONSTRAINT uq_disposals_kid UNIQUE (kitchen_id, id),
-  CONSTRAINT fk_disposals_batch FOREIGN KEY (kitchen_id, batch_id) REFERENCES batches (kitchen_id, id),
-  CONSTRAINT ck_disposals_type CHECK (type IN ('DONATION','SELLOFF','WASTE')),
-  CONSTRAINT ck_disposals_qty CHECK (quantity > 0),
-  CONSTRAINT ck_disposals_reason CHECK (reason_code IS NULL OR reason_code IN ('EXPIRED','SPOILED','OVERSTOCK','OTHER')),
-  CONSTRAINT ck_disposals_waste_reason CHECK (type <> 'WASTE' OR reason_code IS NOT NULL),
-  CONSTRAINT ck_disposals_other_note CHECK (reason_code IS DISTINCT FROM 'OTHER' OR note IS NOT NULL),
-  CONSTRAINT ck_disposals_selloff_rev CHECK (type <> 'SELLOFF' OR revenue_vnd IS NOT NULL),
-  CONSTRAINT ck_disposals_other_rev CHECK (type = 'SELLOFF' OR revenue_vnd IS NULL)
-)""",
-"CREATE INDEX ix_disposals_date ON disposals (kitchen_id, occurred_on)",
-"CREATE INDEX ix_disposals_batch ON disposals (batch_id)",
-]
-DOWN = ["DROP TABLE disposals"]
-
 
 def upgrade() -> None:
-    for s in UP:
-        op.execute(s)
+    op.create_table(
+        "disposals",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("kitchen_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("batch_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("type", sa.Text(), nullable=False),
+        sa.Column("quantity", sa.Numeric(14, 3), nullable=False),
+        sa.Column("occurred_on", sa.Date(), nullable=False),
+        sa.Column("reason_code", sa.Text(), nullable=True),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("counterparty_name", sa.Text(), nullable=True),
+        sa.Column("revenue_vnd", sa.BigInteger(), nullable=True),
+        sa.Column("created_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("user_profiles.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["kitchen_id", "batch_id"],
+            ["batches.kitchen_id", "batches.id"],
+            ondelete="RESTRICT",
+            name="fk_disposals_batch"
+        ),
+        sa.UniqueConstraint("kitchen_id", "id", name="uq_disposals_kitchen_id"),
+        sa.CheckConstraint("type IN ('DONATION', 'SELLOFF', 'WASTE')", name="chk_disposals_type"),
+        sa.CheckConstraint("quantity > 0", name="chk_disposals_quantity_positive"),
+        sa.CheckConstraint("reason_code IS NULL OR reason_code IN ('EXPIRED', 'SPOILED', 'OVERSTOCK', 'OTHER')", name="chk_disposals_reason_code"),
+        sa.CheckConstraint("(type = 'WASTE' AND reason_code IS NOT NULL) OR (type <> 'WASTE' AND reason_code IS NULL)", name="chk_disposals_waste_reason_required"),
+        sa.CheckConstraint("(reason_code = 'OTHER' AND note IS NOT NULL) OR (reason_code <> 'OTHER')", name="chk_disposals_other_note_required"),
+        sa.CheckConstraint("(type = 'SELLOFF' AND revenue_vnd IS NOT NULL) OR (type <> 'SELLOFF' AND revenue_vnd IS NULL)", name="chk_disposals_selloff_revenue_required"),
+    )
+    op.create_index("idx_disposals_occurred_on", "disposals", ["kitchen_id", "occurred_on"])
+    op.create_index("idx_disposals_batch_id", "disposals", ["batch_id"])
 
 
 def downgrade() -> None:
-    for s in DOWN:
-        op.execute(s)
+    op.drop_index("idx_disposals_batch_id", table_name="disposals")
+    op.drop_index("idx_disposals_occurred_on", table_name="disposals")
+    op.drop_table("disposals")

@@ -1,10 +1,8 @@
-.venv/
-__pycache__/
-*.pyc
-.env
-.env.*
-!.env.example
 node_modules/
+build/
 dist/
-.pytest_cache/
-*.zip
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example

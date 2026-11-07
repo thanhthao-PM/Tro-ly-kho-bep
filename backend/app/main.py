@@ -1,70 +1,84 @@
-import logging
-
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
-from sqlalchemy.exc import DBAPIError
+"""
+FastAPI Application Entry Point.
+Hệ thống Trợ lý kho bếp (AI Kitchen Inventory Assistant).
+"""
+import uuid
+import time
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from app.core.config import settings
 
-from app.core.auth import AuthUser, current_user
-from app.core.config import get_settings
-from app.api.v1.routes import router as api_router
-from app.core.database import get_engine
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="Hệ thống quản lý kho bếp, kiểm soát giá vốn FEFO, xử lý hàng cận date và gợi ý bổ sung hàng thông minh.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/api/v1/openapi.json"
+)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("kitchen")
-s = get_settings()
-
-# NOTE: migrations are never run at startup (implementation plan, section 1.6).
-app = FastAPI(title="Kitchen Assistant API", version="0.1.0")
+# Cấu hình CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=s.cors_origin_list,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
-    max_age=600,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Idempotent-Replay"]
 )
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+# Middleware gắn Request ID
+@app.middleware("http")
+async def add_request_id_and_timing(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    start_time = time.time()
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = f"{process_time:.4f}"
+    return response
 
 
-@app.get("/health/db")
-def health_db():
-    with get_engine().connect() as c:
-        c.execute(text("select 1"))
-    return {"status": "ok", "database": "reachable"}
+# Handler bắt lỗi validation của Pydantic
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Dữ liệu gửi lên không đúng định dạng yêu cầu.",
+                "details": exc.errors(),
+                "request_id": request_id
+            }
+        }
+    )
 
 
-@app.get("/api/v1/me")
-def me(user: AuthUser = Depends(current_user)):
-    # Kitchen resolution (user_profiles -> kitchen_id) comes with the schema phase.
-    return {"user_id": user.user_id, "email": user.email}
-
-
+# Mount API v1 Routers
+from app.api.v1.router import api_router
 app.include_router(api_router)
 
 
-def _err(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse({"detail": {"code": code, "message": message}}, status_code=status)
+# Health check endpoint (H1)
+@app.get("/health", tags=["Health"], summary="Liveness check")
+@app.get("/api/v1/health", tags=["Health"], summary="API v1 liveness check")
+def health_check():
+    return {
+        "status": "healthy",
+        "app": settings.APP_NAME,
+        "environment": settings.APP_ENV,
+        "timezone": settings.TIMEZONE
+    }
 
 
-@app.exception_handler(DBAPIError)
-async def db_error(_: Request, exc: DBAPIError):
-    """Map database guard failures to stable API errors without leaking SQL."""
-    orig = getattr(exc, "orig", None)
-    msg, state = str(orig or exc), getattr(orig, "sqlstate", None)
-    log.warning("database error sqlstate=%s", state)
-    if "ck_batches_remaining" in msg or "remaining_qty" in msg and state == "23514":
-        return _err(409, "INSUFFICIENT_STOCK", "Not enough usable stock")
-    if "BASE_UNIT_LOCKED" in msg:
-        return _err(409, "BASE_UNIT_LOCKED", "The base unit cannot change once the ingredient has operational data")
-    if state == "23505":
-        return _err(409, "DUPLICATE", "A record with the same unique value already exists")
-    if state in ("23503", "23514", "23000"):
-        return _err(409, "CONSTRAINT_VIOLATION", "The operation violates a data integrity rule")
-    if state == "55P03":
-        return _err(409, "LOCK_TIMEOUT", "A resource is locked by another request; retry")
-    return _err(500, "INTERNAL_ERROR", "Unexpected database error")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
