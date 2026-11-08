@@ -22,6 +22,7 @@ export const App: React.FC = () => {
   const [storeVersion, setStoreVersion] = useState<number>(0);
   const [invoiceRefreshKey, setInvoiceRefreshKey] = useState(0);
   const [scanBusinessDate, setScanBusinessDate] = useState<string | undefined>();
+  const [scanUploadType, setScanUploadType] = useState<'file' | 'image' | undefined>();
 
   // Modals Visibility States
   const [isScanOpen, setIsScanOpen] = useState(false);
@@ -63,6 +64,13 @@ export const App: React.FC = () => {
   // Modal Triggers
   const handleOpenScan = (businessDate?: string) => {
     setScanBusinessDate(businessDate);
+    setScanUploadType(undefined);
+    setIsScanOpen(true);
+  };
+
+  const handleOpenUpload = (uploadType: 'file' | 'image') => {
+    setScanBusinessDate(undefined);
+    setScanUploadType(uploadType);
     setIsScanOpen(true);
   };
 
@@ -104,6 +112,8 @@ export const App: React.FC = () => {
         unreadNotificationsCount={unreadCount}
         toastMessage={toastMessage}
         onOpenScan={handleOpenScan}
+        onOpenUploadFile={() => handleOpenUpload('file')}
+        onOpenUploadImage={() => handleOpenUpload('image')}
         onOpenBell={handleOpenBell}
       >
         {currentTab === 'kho' && (
@@ -149,9 +159,14 @@ export const App: React.FC = () => {
       {/* 1. Modal Quét chứng từ (Scan Modal) */}
       <ScanModal
         isOpen={isScanOpen}
-        onClose={() => setIsScanOpen(false)}
+        onClose={() => {
+          setIsScanOpen(false);
+          setScanUploadType(undefined);
+        }}
         onShowToast={showToast}
         initialBusinessDate={scanBusinessDate}
+        initialUploadType={scanUploadType}
+        onInitialUploadHandled={() => setScanUploadType(undefined)}
         onReceiptSaved={() => setInvoiceRefreshKey((key) => key + 1)}
       />
 

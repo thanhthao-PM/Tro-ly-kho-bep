@@ -1,8 +1,10 @@
 import unittest
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 from uuid import UUID
 
+import httpx
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
@@ -150,6 +152,75 @@ class TestInvoiceScanHelpers(unittest.TestCase):
             self.assertIn("GEMINI_API_KEY", response.json()["detail"])
             self.assertEqual(pdf_response.status_code, 503)
             self.assertIn("GEMINI_API_KEY", pdf_response.json()["detail"])
+        finally:
+            settings.GEMINI_API_KEY = original_key
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_scan_endpoint_uses_backup_model_after_primary_model_fails(self):
+        class EmptyScalars:
+            @staticmethod
+            def all():
+                return []
+
+        class EmptyResult:
+            @staticmethod
+            def scalars():
+                return EmptyScalars()
+
+        class EmptyDatabase:
+            @staticmethod
+            def execute(_statement):
+                return EmptyResult()
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "candidates": [{
+                        "content": {
+                            "parts": [{
+                                "text": '{"lines":[{"name":"cà chua","qty":2,"unit":"kg","cost":35000}]}'
+                            }]
+                        }
+                    }]
+                }
+
+        class FakeClient:
+            def __init__(self, timeout):
+                self.models = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def post(self, url, **_kwargs):
+                model_name = url.split("/models/", 1)[1].split(":", 1)[0]
+                self.models.append(model_name)
+                if model_name == settings.GEMINI_VISION_MODEL:
+                    request = httpx.Request("POST", url)
+                    response = httpx.Response(404, request=request)
+                    raise httpx.HTTPStatusError("model unavailable", request=request, response=response)
+                return FakeResponse()
+
+        original_key = settings.GEMINI_API_KEY
+        settings.GEMINI_API_KEY = "test-key"
+        app.dependency_overrides[get_db] = lambda: EmptyDatabase()
+        try:
+            with patch("app.api.v1.endpoints.documents.httpx.AsyncClient", FakeClient):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/v1/documents/scan-invoice-image",
+                        params={"kitchen_id": "00000000-0000-0000-0000-000000000002"},
+                        files={"file": ("invoice.jpg", b"\xff\xd8\xfftest", "image/jpeg")},
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["lines"][0]["name"], "cà chua")
         finally:
             settings.GEMINI_API_KEY = original_key
             app.dependency_overrides.pop(get_db, None)

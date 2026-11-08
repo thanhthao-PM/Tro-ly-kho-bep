@@ -53,6 +53,8 @@ services:
       ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_123456}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_VISION_MODEL: ${GEMINI_VISION_MODEL:-gemini-3.8-flash}
+      GEMINI_BACKUP_VISION_MODEL: ${GEMINI_BACKUP_VISION_MODEL:-gemini-3.5-flash-lite}
       INVOICE_STORAGE_DIR: /app/storage/invoices
       APP_ENV: ${APP_ENV:-development}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost:3001","http://127.0.0.1:3001"]}'

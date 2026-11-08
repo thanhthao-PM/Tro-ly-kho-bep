@@ -474,33 +474,68 @@ async def scan_invoice_image(
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_VISION_MODEL}:generateContent",
-                params={"key": settings.GEMINI_API_KEY},
-                json=request_body,
-            )
-            response.raise_for_status()
-            response_data = response.json()
-    except httpx.HTTPStatusError as exc:
-        logger.warning("Gemini invoice scan returned HTTP %s", exc.response.status_code)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Dịch vụ OCR từ chối yêu cầu (HTTP {exc.response.status_code}). Kiểm tra API key hoặc thử lại sau.",
-        ) from exc
-    except (httpx.RequestError, json.JSONDecodeError) as exc:
-        logger.warning("Gemini invoice scan failed: %s", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Không kết nối hoặc đọc được phản hồi từ dịch vụ OCR. Kiểm tra mạng rồi thử lại.",
-        ) from exc
+    extracted: List[Dict[str, Any]] = []
+    source = "manual"
+    last_http_status: Optional[int] = None
+    network_failed = False
+    response_received = False
+    model_names = list(dict.fromkeys((
+        settings.GEMINI_VISION_MODEL,
+        settings.GEMINI_BACKUP_VISION_MODEL,
+    )))
 
-    try:
-        model_text = response_data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError):
-        model_text = ""
-    extracted, source = _parse_model_lines(model_text)
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        for model_name in model_names:
+            try:
+                response = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent",
+                    params={"key": settings.GEMINI_API_KEY},
+                    json=request_body,
+                )
+                response.raise_for_status()
+                response_data = response.json()
+                response_received = True
+            except httpx.HTTPStatusError as exc:
+                last_http_status = exc.response.status_code
+                logger.warning(
+                    "Gemini invoice OCR model %s returned HTTP %s",
+                    model_name,
+                    last_http_status,
+                )
+                continue
+            except (httpx.RequestError, json.JSONDecodeError) as exc:
+                network_failed = True
+                logger.warning(
+                    "Gemini invoice OCR model %s failed: %s",
+                    model_name,
+                    type(exc).__name__,
+                )
+                continue
+
+            try:
+                model_text = response_data["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError):
+                model_text = ""
+            extracted, source = _parse_model_lines(model_text)
+            if extracted:
+                if model_name != settings.GEMINI_VISION_MODEL:
+                    logger.info("Invoice OCR succeeded using backup model %s", model_name)
+                break
+
+            logger.info("Gemini invoice OCR model %s returned no parsable line items", model_name)
+
+    if not extracted and not response_received and last_http_status is not None:
+        if last_http_status in {401, 403}:
+            detail = "Gemini từ chối quyền truy cập API/model. Kiểm tra API key và quyền sử dụng model; lỗi này không phải quyền camera."
+        else:
+            detail = f"Dịch vụ OCR từ chối yêu cầu (HTTP {last_http_status}). Kiểm tra API key hoặc thử lại sau."
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+    if not extracted and not response_received and network_failed:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Không kết nối hoặc đọc được phản hồi từ các model OCR. Kiểm tra mạng rồi thử lại.",
+        )
+
     lines = _match_invoice_lines(extracted, db, kitchen_id)
 
     message = (

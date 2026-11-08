@@ -9,6 +9,8 @@ interface AppLayoutProps {
   unreadNotificationsCount: number;
   toastMessage: string | null;
   onOpenScan: () => void;
+  onOpenUploadFile: () => void;
+  onOpenUploadImage: () => void;
   onOpenBell: () => void;
   children: React.ReactNode;
 }
@@ -19,6 +21,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   unreadNotificationsCount,
   toastMessage,
   onOpenScan,
+  onOpenUploadFile,
+  onOpenUploadImage,
   onOpenBell,
   children,
 }) => {
@@ -29,6 +33,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <Header
           unreadCount={unreadNotificationsCount}
           onOpenScan={onOpenScan}
+          onOpenUploadFile={onOpenUploadFile}
+          onOpenUploadImage={onOpenUploadImage}
           onOpenBell={onOpenBell}
         />
 

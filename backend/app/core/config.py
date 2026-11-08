@@ -38,7 +38,8 @@ class Settings(BaseSettings):
 
     # Gemini OCR for invoice images
     GEMINI_API_KEY: str = ""
-    GEMINI_VISION_MODEL: str = "gemini-2.5-flash"
+    GEMINI_VISION_MODEL: str = "gemini-3.8-flash"
+    GEMINI_BACKUP_VISION_MODEL: str = "gemini-3.5-flash-lite"
     INVOICE_STORAGE_DIR: str = str(Path(__file__).resolve().parents[2] / "storage" / "invoices")
 
     # CORS

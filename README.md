@@ -40,7 +40,7 @@ Chỉ với **1 câu lệnh duy nhất**, toàn bộ hệ thống gồm PostgreS
 ```bash
 cp .env.example .env
 ```
-Để đọc ảnh/PDF bằng AI, điền `GEMINI_API_KEY` trong file `.env` ở thư mục gốc. CSV/XLSX có thể đọc trực tiếp mà không cần API key.
+Để đọc ảnh/PDF bằng AI, điền `GEMINI_API_KEY` trong file `.env` ở thư mục gốc. OCR dùng `gemini-3.8-flash` trước và tự thử `gemini-3.5-flash-lite` nếu model chính lỗi hoặc không bóc tách được dòng hàng. CSV/XLSX có thể đọc trực tiếp mà không cần API key. Không có model ID chính thức `gemini-3.5-flash`; nếu muốn dùng model khác, thay `GEMINI_VISION_MODEL` bằng model ID được Google hỗ trợ.
 
 ### Bước 2: Khởi chạy Docker Compose
 ```bash
@@ -59,6 +59,8 @@ Trong giao diện **Quét**, chọn một trong các cách:
 - **Chọn hình ảnh** hoặc **Chụp bằng camera**: ảnh được đọc bằng Gemini.
 
 CSV/XLSX phải có các cột theo thứ tự `Tên nguyên liệu, Số lượng, Đơn vị, Đơn giá` (có thể có dòng tiêu đề; hỗ trợ dấu phẩy/chấm thập phân và phân cách cột bằng dấu phẩy hoặc chấm phẩy). Ảnh/PDF cần có `GEMINI_API_KEY` trong `.env`; nếu thiếu, ứng dụng sẽ báo rõ và vẫn cho nhập dòng thủ công. Sau khi kiểm tra các dòng, chọn nguyên liệu trong danh mục rồi bấm **Xác nhận nhập kho**. Chỉ bước xác nhận mới ghi chứng từ, dòng hàng, lô tồn và biến động kho vào PostgreSQL; tệp gốc được giữ trong Docker volume `invoice_data`. Sau khi thêm API key, khởi động lại backend bằng `docker compose up --build -d backend`.
+
+Trên máy tính, **Tải tệp** và **Tải ảnh** mở trực tiếp hộp chọn tương ứng; các thao tác này không cần quyền camera. Chỉ nút **Chụp bằng camera** mới cần trình duyệt cấp quyền camera (và chạy trên `localhost` hoặc HTTPS).
 
 ### Dừng hệ thống:
 ```bash
@@ -135,6 +137,8 @@ CREATE DATABASE kitchen_inventory;
 | Tên biến | Mặc định | Bắt buộc | Mô tả |
 | :--- | :--- | :---: | :--- |
 | `GEMINI_API_KEY` | *(trống)* | Không | API Key Google AI Studio, bắt buộc nếu muốn đọc hóa đơn từ ảnh/PDF. CSV/XLSX và nhập tay không cần key. |
+| `GEMINI_VISION_MODEL` | `gemini-3.8-flash` | Không | Model OCR chính. |
+| `GEMINI_BACKUP_VISION_MODEL` | `gemini-3.5-flash-lite` | Không | Model OCR dự phòng khi model chính lỗi hoặc không trích xuất được mặt hàng. |
 | `PORT` | `3000` | Có | Cổng dịch vụ chạy ứng dụng Web Frontend. |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres_password_123@localhost:5432/kitchen_inventory` | Có | URL kết nối PostgreSQL qua SQLAlchemy 2.x (Sync driver `psycopg 3`). |
 | `ADMIN_DATABASE_URL` | `postgresql+psycopg://postgres:postgres_password_123@localhost:5432/kitchen_inventory` | Có | URL dành riêng cho migration Alembic (quyền quản trị DDL). |

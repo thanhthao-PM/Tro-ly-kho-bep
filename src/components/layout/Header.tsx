@@ -5,12 +5,16 @@ import { FileText, Image } from 'lucide-react';
 interface HeaderProps {
   unreadCount: number;
   onOpenScan?: () => void;
+  onOpenUploadFile?: () => void;
+  onOpenUploadImage?: () => void;
   onOpenBell?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   unreadCount,
   onOpenScan,
+  onOpenUploadFile,
+  onOpenUploadImage,
   onOpenBell,
 }) => {
   return (
@@ -26,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           className="top-btn desktop-upload-btn"
-          onClick={onOpenScan}
+          onClick={onOpenUploadFile}
           aria-label="Tải tệp hóa đơn lên"
         >
           <FileText size={18} />
@@ -36,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           className="top-btn desktop-upload-btn"
-          onClick={onOpenScan}
+          onClick={onOpenUploadImage}
           aria-label="Tải hình ảnh hóa đơn lên"
         >
           <Image size={18} />

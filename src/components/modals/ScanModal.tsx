@@ -24,6 +24,8 @@ interface ScanModalProps {
   onClose: () => void;
   onShowToast: (msg: string) => void;
   initialBusinessDate?: string;
+  initialUploadType?: 'file' | 'image';
+  onInitialUploadHandled?: () => void;
   onReceiptSaved?: () => void;
 }
 
@@ -63,6 +65,8 @@ export const ScanModal: React.FC<ScanModalProps> = ({
   onClose,
   onShowToast,
   initialBusinessDate,
+  initialUploadType,
+  onInitialUploadHandled,
   onReceiptSaved,
 }) => {
   const [docKind, setDocKind] = useState<'IMPORT' | 'SALES'>('IMPORT');
@@ -109,9 +113,24 @@ export const ScanModal: React.FC<ScanModalProps> = ({
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const invoiceFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const findCatalogIngredient = (name: string) => {
+    const normalizedName = name.trim().toLocaleLowerCase('vi');
+    return catalogIngredients.find((ingredient) =>
+      ingredient.name.toLocaleLowerCase('vi') === normalizedName
+      || ingredient.aliases.some((alias) => alias.toLocaleLowerCase('vi') === normalizedName)
+    );
+  };
+
   useEffect(() => {
     if (isOpen) setDocDate(initialBusinessDate || new Date().toISOString().slice(0, 10));
   }, [isOpen, initialBusinessDate]);
+
+  useEffect(() => {
+    if (!isOpen || !initialUploadType) return;
+    const input = initialUploadType === 'image' ? imageInputRef.current : invoiceFileInputRef.current;
+    input?.click();
+    onInitialUploadHandled?.();
+  }, [isOpen, initialUploadType, onInitialUploadHandled]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -123,7 +142,11 @@ export const ScanModal: React.FC<ScanModalProps> = ({
         setCatalogIngredients(ingredients);
         setInvoiceLines((previous) => previous.map((line) => {
           if (line.ingredientId) return line;
-          const match = ingredients.find((item) => item.name.toLocaleLowerCase('vi') === line.name.trim().toLocaleLowerCase('vi'));
+          const normalizedName = line.name.trim().toLocaleLowerCase('vi');
+          const match = ingredients.find((ingredient) =>
+            ingredient.name.toLocaleLowerCase('vi') === normalizedName
+            || ingredient.aliases.some((alias) => alias.toLocaleLowerCase('vi') === normalizedName)
+          );
           return match ? { ...line, ingredientId: match.id, unit: match.base_unit_code } : line;
         }));
       })
@@ -467,7 +490,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
 
         const unresolvedLines = selectedInvoiceLines.filter((line) => !line.ingredientId);
         if (unresolvedLines.length > 0) {
-          onShowToast(`Vui lòng chọn nguyên liệu trong danh mục cho: ${unresolvedLines.map((line) => line.name || 'dòng chưa đặt tên').join(', ')}.`);
+          onShowToast(`Chưa tìm thấy trong danh mục kho: ${unresolvedLines.map((line) => line.name || 'dòng chưa đặt tên').join(', ')}. Hãy thêm nguyên liệu này vào kho trước khi nhập hóa đơn.`);
           return;
         }
 
@@ -816,7 +839,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                     <th className="p-2.5 w-24">Vị trí</th>
                     <th className="p-2.5 w-28">Hạn dùng</th>
                     <th className="p-2.5 w-24 text-right">Thành tiền</th>
-                    <th className="p-2.5 w-8"></th>
+                    <th className="p-2.5 w-12 text-center">Xóa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--line)]">
@@ -841,9 +864,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                           value={line.name}
                           onChange={(e) => {
                             const val = e.target.value;
-                              const match = catalogIngredients.find(
-                                (ingredient) => ingredient.name.toLocaleLowerCase('vi') === val.trim().toLocaleLowerCase('vi')
-                            );
+                            const match = findCatalogIngredient(val);
                               setInvoiceLines((prev) =>
                                 prev.map((l) => (l.id === line.id
                                   ? {
@@ -858,33 +879,6 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                             placeholder="vd: Cà chua"
                             className="w-full px-2 py-1 rounded border border-[var(--line)] bg-[var(--bg)] text-[var(--ink)] font-medium"
                           />
-                          <select
-                            value={line.ingredientId || ''}
-                            onChange={(e) => {
-                              const ingredient = catalogIngredients.find((item) => item.id === e.target.value);
-                              setInvoiceLines((prev) => prev.map((item) => item.id === line.id
-                                ? {
-                                    ...item,
-                                    ingredientId: ingredient?.id,
-                                    name: ingredient?.name || item.name,
-                                    unit: ingredient?.base_unit_code || item.unit,
-                                    location: ingredient?.default_location || item.location,
-                                    expiryDate: ingredient
-                                      ? new Date(Date.now() + (ingredient.expiry_warning_days ?? 7) * 86400000).toISOString().slice(0, 10)
-                                      : item.expiryDate,
-                                  }
-                                : item));
-                            }}
-                            aria-label={`Chọn nguyên liệu trong danh mục cho ${line.name || 'dòng hàng'}`}
-                            className="mt-1 w-full rounded border border-[var(--line)] bg-[var(--bg)] px-2 py-1 text-[10px] text-[var(--muted)]"
-                          >
-                            <option value="">Chọn nguyên liệu trong danh mục kho...</option>
-                            {catalogIngredients.map((ingredient) => (
-                              <option key={ingredient.id} value={ingredient.id}>
-                                {ingredient.name} ({ingredient.base_unit_code})
-                              </option>
-                            ))}
-                          </select>
                         </td>
                       <td className="p-2">
                         <input
@@ -965,6 +959,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setInvoiceLines((prev) => prev.filter((l) => l.id !== line.id))}
+                          aria-label={`Xóa dòng ${line.name || 'nguyên liệu'}`}
                           className="text-[var(--muted)] hover:text-[var(--bad-fg)] transition-colors p-1"
                         >
                           <Trash2 size={14} />
@@ -983,7 +978,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                     <th className="p-2.5 w-24">Số phần bán</th>
                     <th className="p-2.5 w-32">Giá bán (đ/phần)</th>
                     <th className="p-2.5 w-32 text-right">Doanh thu</th>
-                    <th className="p-2.5 w-8"></th>
+                    <th className="p-2.5 w-12 text-center">Xóa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--line)]">
@@ -1051,6 +1046,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setSalesLines((prev) => prev.filter((l) => l.id !== line.id))}
+                          aria-label={`Xóa dòng ${line.dishName || 'món ăn'}`}
                           className="text-[var(--muted)] hover:text-[var(--bad-fg)] transition-colors p-1"
                         >
                           <Trash2 size={14} />
