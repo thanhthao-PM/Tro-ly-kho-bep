@@ -1,11 +1,43 @@
 """
 Pydantic Schemas cho Module Inventory (Kho hàng, Lô hàng, Sổ cái).
 """
-from typing import List, Optional, Dict
+from typing import Optional, Dict
 from uuid import UUID
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from decimal import Decimal
+from pydantic import BaseModel, ConfigDict, Field
 from app.core.constants import StorageLocation, ExpiryStatus, MovementType
+
+
+class BatchRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    kitchen_id: UUID
+    ingredient_id: UUID
+    received_on: date
+    expiry_date: Optional[date] = None
+    initial_qty: Decimal
+    remaining_qty: Decimal
+    unit_cost: Decimal
+    location: StorageLocation
+    source_document_line_id: Optional[UUID] = None
+    created_at: datetime
+
+
+class BatchCreateRequest(BaseModel):
+    ingredient_id: UUID
+    quantity: Decimal = Field(gt=0)
+    unit_cost: Decimal = Field(ge=0)
+    location: StorageLocation
+    expiry_date: Optional[date] = None
+    received_on: Optional[date] = None
+
+
+class BatchAdjustmentRequest(BaseModel):
+    actual_quantity: Decimal = Field(ge=0)
+    new_unit_cost: Optional[Decimal] = Field(default=None, ge=0)
+    reason_code: Optional[str] = None
 
 
 class BatchResponse(BaseModel):

@@ -13,8 +13,8 @@ from app.services.sales_service import SalesService, SaleLineItemInput
 from app.schemas.sales import (
     SaleCreateRequest,
     SaleResponse,
-    StockShortageResolveRequest,
-    StockShortageResponse
+    ShortageResolveRequest,
+    ShortageResponse
 )
 
 router = APIRouter(prefix="/sales", tags=["Sales"])
@@ -52,11 +52,11 @@ def record_sale(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/shortages/{shortage_id}/resolve", response_model=StockShortageResponse)
+@router.post("/shortages/{shortage_id}/resolve", response_model=ShortageResponse)
 def resolve_shortage(
     shortage_id: str,
     kitchen_id: str = Query(..., description="ID của bếp"),
-    payload: StockShortageResolveRequest = ...,
+    payload: ShortageResolveRequest = ...,
     db: Session = Depends(get_db)
 ):
     try:
@@ -64,7 +64,7 @@ def resolve_shortage(
             db=db,
             kitchen_id=kitchen_id,
             shortage_id=shortage_id,
-            resolution_mode=payload.resolution.value if hasattr(payload.resolution, 'value') else str(payload.resolution)
+            resolution_mode=payload.action.value if hasattr(payload.action, 'value') else str(payload.action)
         )
         db.commit()
         db.refresh(shortage)

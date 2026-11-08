@@ -9,6 +9,19 @@ from app.core.constants import SaleOrigin, ConsumptionStatus, ShortageStatus, Sh
 from app.schemas.common import Labeled
 
 
+class SaleLineCreateRequest(BaseModel):
+    dish_id: UUID
+    quantity: int = Field(ge=1)
+    unit_price_vnd: Optional[int] = Field(default=None, ge=0)
+    origin: SaleOrigin = SaleOrigin.NORMAL
+    source_batch_id: Optional[UUID] = None
+
+
+class SaleCreateRequest(BaseModel):
+    business_date: date
+    items: List[SaleLineCreateRequest] = Field(min_length=1)
+
+
 class SaleLineResponse(BaseModel):
     id: UUID
     dish_id: UUID

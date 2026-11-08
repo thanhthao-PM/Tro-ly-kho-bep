@@ -3,10 +3,9 @@ API Endpoints cho Quản lý Lô hàng và Tồn kho (Batches & Inventory).
 """
 from typing import List, Optional
 from decimal import Decimal
-from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
+from sqlalchemy import select
 
 from app.db.session import get_db
 from app.db.models.inventory import Batch
@@ -14,8 +13,7 @@ from app.services.inventory_service import InventoryService
 from app.schemas.inventory import (
     BatchRead,
     BatchCreateRequest,
-    BatchAdjustmentRequest,
-    InventorySummaryResponse
+    BatchAdjustmentRequest
 )
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])

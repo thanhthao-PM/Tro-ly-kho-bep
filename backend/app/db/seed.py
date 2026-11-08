@@ -15,7 +15,7 @@ from app.db.session import SessionLocal, engine
 from app.db.base import Base
 from app.db.models.kitchen import UserProfile, Kitchen, KitchenSettings
 from app.db.models.catalog import Unit, Ingredient, IngredientUnitConversion
-from app.db.models.menu import Dish, DishRecipeItem
+from app.db.models.menu import Dish, RecipeItem
 from app.db.models.inventory import Batch, StockMovement
 from app.core.config import settings
 
@@ -273,12 +273,11 @@ def seed_database(demo_mode: bool = False, reset: bool = False):
                 for r in d["recipe"]:
                     mapped_ing_id = ing_map.get(r["ingredient_name"])
                     if mapped_ing_id:
-                        db.add(DishRecipeItem(
+                        db.add(RecipeItem(
                             kitchen_id=DEMO_KITCHEN_ID,
                             dish_id=dish_id,
                             ingredient_id=mapped_ing_id,
-                            quantity=r["qty"],
-                            unit_code=r["unit"]
+                            quantity_base=r["qty"]
                         ))
         db.flush()
         print(f"✓ Đã nạp {len(STANDARD_DISHES)} món ăn và định lượng công thức chuẩn.")

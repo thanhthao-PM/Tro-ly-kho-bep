@@ -7,11 +7,13 @@ from datetime import datetime, date
 from sqlalchemy import (
     Column, Text, Integer, Numeric, Date, DateTime, BigInteger,
     Boolean, ForeignKey, CheckConstraint, UniqueConstraint, Index,
-    ForeignKeyConstraint, text
+    ForeignKeyConstraint, and_, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 from app.db.base import Base
+from app.db.models.catalog import Ingredient
+from app.db.models.menu import Dish
 
 
 class Document(Base):
@@ -82,8 +84,22 @@ class DocumentLine(Base):
     is_selected = Column(Boolean, nullable=False, server_default="true")
 
     document = relationship("Document", back_populates="lines")
-    ingredient = relationship("Ingredient")
-    dish = relationship("Dish")
+    ingredient = relationship(
+        Ingredient,
+        primaryjoin=lambda: and_(
+            DocumentLine.kitchen_id == Ingredient.kitchen_id,
+            foreign(DocumentLine.ingredient_id) == Ingredient.id
+        ),
+        viewonly=True
+    )
+    dish = relationship(
+        Dish,
+        primaryjoin=lambda: and_(
+            DocumentLine.kitchen_id == Dish.kitchen_id,
+            foreign(DocumentLine.dish_id) == Dish.id
+        ),
+        viewonly=True
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(

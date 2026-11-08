@@ -4,9 +4,37 @@ Pydantic Schemas cho Module Disposals (Xử lý hàng cận date & quá hạn).
 from typing import List, Optional
 from uuid import UUID
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from app.core.constants import DisposalType, WasteReason, ExpiryStatus
 from app.schemas.inventory import BatchResponse
+
+
+class DisposalCreateRequest(BaseModel):
+    batch_id: UUID
+    type: DisposalType
+    quantity: str = Field(gt=0)
+    occurred_on: Optional[date] = None
+    note: Optional[str] = None
+    counterparty_name: Optional[str] = None
+    revenue_vnd: Optional[int] = Field(default=None, ge=0)
+    reason_code: Optional[WasteReason] = None
+
+
+class DisposalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    kitchen_id: UUID
+    batch_id: UUID
+    type: DisposalType
+    quantity: str
+    occurred_on: date
+    reason_code: Optional[WasteReason] = None
+    note: Optional[str] = None
+    counterparty_name: Optional[str] = None
+    revenue_vnd: Optional[int] = None
+    created_by: Optional[UUID] = None
+    created_at: datetime
 
 
 class SuggestedDishSchema(BaseModel):
