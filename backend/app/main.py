@@ -19,10 +19,15 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json"
 )
 
+cors_origins = list(settings.CORS_ORIGINS)
+if settings.APP_ENV != "production":
+    cors_origins.extend(("http://localhost:3001", "http://127.0.0.1:3001"))
+cors_origins = list(dict.fromkeys(cors_origins))
+
 # Cấu hình CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

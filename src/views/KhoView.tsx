@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   simulationStore,
   formatQty,
@@ -7,22 +7,103 @@ import {
 } from '../services/mock/simulationStore';
 import { Icon } from '../components/common/Icon';
 import { StatusTag } from '../components/common/StatusTag';
+import { apiClient } from '../services/api/client';
 
 interface KhoViewProps {
   onNavigateToAI: () => void;
   onOpenEdit: () => void;
   onOpenDetail: (productName: string) => void;
+  inventoryRefreshKey: number;
+}
+
+interface DatabaseBatch {
+  id: string;
+  ingredient_id: string;
+  received_on: string;
+  expiry_date: string | null;
+  remaining_qty: string;
+  unit_cost: string;
+  location: keyof typeof STORAGE_LOCATIONS;
+}
+
+interface DatabaseIngredient {
+  id: string;
+  name: string;
+  base_unit_code: string;
+}
+
+const KITCHEN_ID = import.meta.env.VITE_KITCHEN_ID || '00000000-0000-0000-0000-000000000002';
+
+const formatVnd = (value: number) => `${Math.round(value).toLocaleString('vi-VN')} đ`;
+
+const formatDate = (value: string | null) => value
+  ? new Date(`${value}T00:00:00`).toLocaleDateString('vi-VN')
+  : 'Không có hạn';
+
+const locationLabel: Record<keyof typeof STORAGE_LOCATIONS, string> = STORAGE_LOCATIONS;
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : 'Không tải được dữ liệu kho từ PostgreSQL.';
+
+const getDatabaseBatchRows = (
+  batches: DatabaseBatch[],
+  ingredients: DatabaseIngredient[],
+) => {
+  const ingredientById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+  return batches.map((batch) => {
+    const ingredient = ingredientById.get(batch.ingredient_id);
+    const quantity = Number(batch.remaining_qty);
+    const unitCost = Number(batch.unit_cost);
+    return {
+      ...batch,
+      ingredientName: ingredient?.name || 'Nguyên liệu chưa rõ',
+      unit: ingredient?.base_unit_code || '',
+      quantity,
+      stockValue: quantity * unitCost,
+    };
+  });
 }
 
 export const KhoView: React.FC<KhoViewProps> = ({
   onNavigateToAI,
   onOpenEdit,
   onOpenDetail,
+  inventoryRefreshKey,
 }) => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [sortBy, setSortBy] = useState('exp');
   const [locationFilter, setLocationFilter] = useState('all');
+  const [databaseBatches, setDatabaseBatches] = useState<DatabaseBatch[]>([]);
+  const [databaseIngredients, setDatabaseIngredients] = useState<DatabaseIngredient[]>([]);
+  const [databaseLoading, setDatabaseLoading] = useState(true);
+  const [databaseError, setDatabaseError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setDatabaseLoading(true);
+    setDatabaseError('');
+    void Promise.all([
+      apiClient.get<DatabaseBatch[]>('/inventory/batches', { kitchen_id: KITCHEN_ID }),
+      apiClient.get<{ ingredients: DatabaseIngredient[] }>('/documents/ingredients', { kitchen_id: KITCHEN_ID }),
+    ]).then(([batches, catalog]) => {
+      if (!active) return;
+      setDatabaseBatches(batches);
+      setDatabaseIngredients(catalog.ingredients);
+    }).catch((error: unknown) => {
+      if (active) setDatabaseError(getErrorMessage(error));
+    }).finally(() => {
+      if (active) setDatabaseLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [inventoryRefreshKey]);
+
+  const databaseBatchRows = useMemo(
+    () => getDatabaseBatchRows(databaseBatches, databaseIngredients),
+    [databaseBatches, databaseIngredients]
+  );
 
   const importDates = useMemo(() => simulationStore.getImportDates(), []);
   const expiring = useMemo(() => simulationStore.getExpiringSummary(), []);
@@ -54,6 +135,36 @@ export const KhoView: React.FC<KhoViewProps> = ({
         <small>{dayString}</small>
         <h1>Kho bếp của tôi</h1>
       </div>
+
+      <section className="ui-card" style={{ marginTop: '12px' }} aria-live="polite">
+        <div className="section-h3">Tồn kho thực tế · PostgreSQL</div>
+        {databaseLoading ? (
+          <p role="status" style={{ color: 'var(--muted)' }}>Đang đọc dữ liệu kho từ máy chủ…</p>
+        ) : databaseError ? (
+          <p role="alert" style={{ color: 'var(--bad-fg)' }}>Không đọc được kho PostgreSQL: {databaseError}</p>
+        ) : databaseBatchRows.length === 0 ? (
+          <p style={{ color: 'var(--muted)' }}>Cơ sở dữ liệu chưa có lô hàng còn tồn.</p>
+        ) : (
+          <div className="list-grid">
+            {databaseBatchRows.map((batch) => (
+              <div key={batch.id} className="product-row">
+                <div className="avatar-badge tag-ok">
+                  {batch.ingredientName.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className="product-name">{batch.ingredientName}</span>
+                  <span className="product-sub">
+                    {formatQty(batch.quantity)} {batch.unit} · {locationLabel[batch.location] || batch.location}
+                    {' · Hạn: '}{formatDate(batch.expiry_date)}
+                  </span>
+                  <span className="product-sub">Giá trị lô: {formatVnd(batch.stockValue)}</span>
+                </div>
+                <StatusTag tone="neutral">DB</StatusTag>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Hero Card */}
       {expiring.soon + expiring.expired > 0 ? (

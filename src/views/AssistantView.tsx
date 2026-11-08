@@ -15,7 +15,9 @@ import {
   RecommendationItem,
   ProposedAction,
   ReplenishmentItem,
+  AssistantMessageResponse,
 } from '../types';
+import { apiClient } from '../services/api/client';
 
 type AISubTab = 'goiy' | 'pt' | 'kho' | 'hd';
 type ReplenishFilter = 'items' | 'insufficient' | 'no_cons';
@@ -39,6 +41,8 @@ interface AssistantViewProps {
   onOpenDish?: (dishId?: string) => void;
   onShowToast: (msg: string) => void;
 }
+
+const KITCHEN_ID = import.meta.env.VITE_KITCHEN_ID || '00000000-0000-0000-0000-000000000002';
 
 export const AssistantView: React.FC<AssistantViewProps> = ({
   onProcessBatch,
@@ -128,7 +132,11 @@ export const AssistantView: React.FC<AssistantViewProps> = ({
         .slice(-6)
         .map((m) => ({ role: m.role, text: m.text }));
 
-      const res = await simulationStore.askAIGrounded(q, historyTurns);
+      const res = await apiClient.request<AssistantMessageResponse>('/assistant/messages', {
+        method: 'POST',
+        params: { kitchen_id: KITCHEN_ID },
+        body: JSON.stringify({ message: q, history: historyTurns }),
+      });
 
       setChatMessages((prev) =>
         prev.map((m) => {
@@ -148,14 +156,15 @@ export const AssistantView: React.FC<AssistantViewProps> = ({
           return m;
         })
       );
-    } catch (_err) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Không kết nối được dữ liệu kho.';
       setChatMessages((prev) =>
         prev.map((m) => {
           if (m.id === loadingMsgId) {
             return {
               id: `err-${Date.now()}`,
               role: 'assistant',
-              text: 'Đã xảy ra lỗi khi kết nối dữ liệu trợ lý. Vui lòng thử lại.',
+              text: `Không đọc được dữ liệu thật từ máy chủ: ${errorMessage}`,
               isLoading: false,
             };
           }

@@ -255,7 +255,8 @@ class InventoryService:
             received_on=rec_date,
             expiry_date=expiry_date,
             initial_qty=qty,
-            remaining_qty=qty,
+            # The stock-movement trigger applies the receipt quantity to this starting balance.
+            remaining_qty=Decimal("0"),
             unit_cost=unit_cost,
             location=location,
             source_document_line_id=document_line_id

@@ -132,6 +132,16 @@ class TestInvoiceScanHelpers(unittest.TestCase):
         self.assertEqual(line.unit_code, "kg")
         self.assertEqual(line.unit_cost, Decimal("35000"))
 
+    def test_receipt_request_accepts_unresolved_ingredient_name(self):
+        line = CommitReceiptLine.model_validate({
+            "name": "Cà chua",
+            "quantity": 2,
+            "unit": "kg",
+            "unit_cost": 35000,
+        })
+        self.assertIsNone(line.ingredient_id)
+        self.assertEqual(line.name, "Cà chua")
+
     def test_scan_endpoint_reports_missing_api_key(self):
         original_key = settings.GEMINI_API_KEY
         settings.GEMINI_API_KEY = ""

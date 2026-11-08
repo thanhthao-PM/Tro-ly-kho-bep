@@ -65,11 +65,12 @@
 - `GET /stock-movements`: Lịch sử biến động sổ cái kho (Query: `from`, `to`, `type`, `ingredient_id`, `cursor`).
 
 ### 2.4 Chứng từ Nhập & Xuất (Documents)
-- `POST /documents/scan-invoice-image`: Quét ảnh JPEG/PNG/WebP hoặc PDF hóa đơn nhập (tối đa 10 MB).
+- `POST /documents/scan-invoice-image`: Quét ảnh JPEG/PNG/WebP hoặc PDF hóa đơn nhập (tối đa 10 MB); cần cấu hình `GEMINI_API_KEY` trong biến môi trường hoặc `.env` ở thư mục gốc/backend.
 - `POST /documents/parse-invoice-file`: Đọc CSV/XLSX (tối đa 10 MB) có cột tên, số lượng, đơn vị và đơn giá.
 - `POST /documents/receipts/upload`: Xác nhận nhập kho bằng multipart gồm `file` và `payload` (metadata JSON); giữ tệp gốc để tải lại.
 - `GET /documents/{id}/file`: Tải tệp hóa đơn gốc (`kitchen_id` query bắt buộc).
-- `POST /documents/receipts`: Xác nhận nhập kho thủ công hoặc không kèm tệp.
+- `POST /documents/receipts`: Xác nhận nhập kho thủ công hoặc không kèm tệp; mỗi dòng có thể gửi `ingredient_id` hoặc chỉ gửi `name`, khi đó backend tự tìm theo tên chuẩn hóa hoặc tạo nguyên liệu mới theo đơn vị tính.
+- Xác nhận hóa đơn tạo chứng từ, dòng chứng từ, lô hàng và bút toán `RECEIPT` trong cùng transaction; lỗi ở bất kỳ dòng nào sẽ rollback toàn bộ.
 - `GET /documents`: Danh sách chứng từ.
 - `GET /documents/{id}`: Chi tiết chứng từ và các dòng chi tiết (`document_lines`).
 - `POST /documents/{id}/lines`: Thêm dòng mới vào chứng từ nháp (`DRAFT`).

@@ -7,6 +7,8 @@ Tuân thủ nghiêm ngặt Architecture Revision 6.3:
 import hashlib
 import io
 import csv
+import re
+import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime
 from typing import List, Dict, Any, Optional
@@ -22,6 +24,93 @@ from app.services.sales_service import SalesService, SaleLineItemInput
 
 
 class DocumentService:
+
+    @staticmethod
+    def _normalize_ingredient_name(name: str) -> str:
+        folded = unicodedata.normalize("NFD", name.casefold().replace("đ", "d"))
+        without_marks = "".join(char for char in folded if unicodedata.category(char) != "Mn")
+        return re.sub(r"[^a-z0-9]+", " ", without_marks).strip()
+
+    @staticmethod
+    def _resolve_receipt_ingredient(
+        db: Session,
+        kitchen_id: UUID,
+        line_data: Dict[str, Any],
+    ) -> Ingredient:
+        ingredient_id = line_data.get("ingredient_id")
+        ingredient = None
+        if ingredient_id:
+            try:
+                parsed_id = UUID(str(ingredient_id))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Mã nguyên liệu không hợp lệ: {ingredient_id}") from exc
+            ingredient = db.execute(
+                select(Ingredient).where(
+                    and_(
+                        Ingredient.kitchen_id == kitchen_id,
+                        Ingredient.id == parsed_id,
+                        Ingredient.deleted_at.is_(None)
+                    )
+                )
+            ).scalar_one_or_none()
+            if ingredient is None:
+                candidates = db.execute(
+                    select(Ingredient).where(
+                        and_(
+                            Ingredient.kitchen_id == kitchen_id,
+                            Ingredient.deleted_at.is_(None)
+                        )
+                    )
+                ).scalars()
+                ingredient = next(
+                    (
+                        candidate for candidate in candidates
+                        if DocumentService._normalize_ingredient_name(candidate.normalized_name) == normalized_name
+                    ),
+                    None,
+                )
+
+        name = str(line_data.get("name") or line_data.get("parsed_name") or "").strip()
+        if ingredient is None:
+            if not name:
+                raise ValueError("Mỗi dòng nhập kho cần mã nguyên liệu hợp lệ hoặc tên nguyên liệu")
+
+            normalized_name = DocumentService._normalize_ingredient_name(name)
+            ingredient = db.execute(
+                select(Ingredient).where(
+                    and_(
+                        Ingredient.kitchen_id == kitchen_id,
+                        Ingredient.normalized_name == normalized_name,
+                        Ingredient.deleted_at.is_(None)
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if ingredient is None:
+                base_unit_code = str(line_data.get("unit_code") or line_data.get("unit") or "kg").strip().lower()
+                if db.get(Unit, base_unit_code) is None:
+                    raise ValueError(f"Đơn vị tính không tồn tại: {base_unit_code}")
+
+                location = line_data.get("location") or "FRIDGE"
+                if hasattr(location, "value"):
+                    location = location.value
+                if location == "DRY":
+                    location = "PANTRY"
+                if location not in {"FRIDGE", "FREEZER", "PANTRY"}:
+                    raise ValueError(f"Vị trí lưu trữ không hợp lệ: {location}")
+
+                ingredient = Ingredient(
+                    kitchen_id=kitchen_id,
+                    name=name,
+                    normalized_name=normalized_name,
+                    search_name=normalized_name,
+                    base_unit_code=base_unit_code,
+                    default_location=location,
+                )
+                db.add(ingredient)
+                db.flush()
+
+        return ingredient
 
     @staticmethod
     def _parse_csv_number(
@@ -159,22 +248,13 @@ class DocumentService:
         db.flush()
 
         for idx, line_data in enumerate(lines, start=1):
-            ingredient_id = UUID(str(line_data["ingredient_id"]))
-            ingredient = db.execute(
-                select(Ingredient).where(
-                    and_(
-                        Ingredient.kitchen_id == kitchen_uuid,
-                        Ingredient.id == ingredient_id,
-                        Ingredient.deleted_at.is_(None)
-                    )
-                )
-            ).scalar_one_or_none()
-            if not ingredient:
-                raise ValueError(f"Không tìm thấy nguyên liệu hợp lệ trong bếp: {line_data.get('name', ingredient_id)}")
+            ingredient = DocumentService._resolve_receipt_ingredient(db, kitchen_uuid, line_data)
 
             qty = Decimal(str(line_data["quantity"]))
             unit_cost = Decimal(str(line_data.get("unit_cost", 0)))
-            unit_code = line_data.get("unit_code") or ingredient.base_unit_code
+            unit_code = str(
+                line_data.get("unit_code") or line_data.get("unit") or ingredient.base_unit_code
+            ).strip().lower()
             if unit_code != ingredient.base_unit_code:
                 conversion = db.execute(
                     select(IngredientUnitConversion).where(
@@ -212,7 +292,7 @@ class DocumentService:
                 qty *= factor
                 unit_cost /= factor
 
-            location = line_data.get("location", "FRIDGE")
+            location = line_data.get("location") or ingredient.default_location
             if hasattr(location, "value"):
                 location = location.value
             expiry_date = line_data.get("expiry_date")
@@ -222,7 +302,7 @@ class DocumentService:
                 document_id=doc.id,
                 line_no=idx,
                 raw_text=line_data.get("raw_text"),
-                parsed_name=line_data.get("name") or ingredient.name,
+                parsed_name=line_data.get("name"),
                 ingredient_id=ingredient.id,
                 quantity=qty,
                 unit_code=ingredient.base_unit_code,

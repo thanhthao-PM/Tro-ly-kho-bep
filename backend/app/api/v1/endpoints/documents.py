@@ -60,7 +60,7 @@ class ParseCsvRequest(BaseModel):
 
 
 class CommitReceiptLine(BaseModel):
-    ingredient_id: UUID
+    ingredient_id: Optional[UUID] = None
     name: Optional[str] = Field(default=None, max_length=200)
     quantity: Decimal = Field(gt=0, validation_alias=AliasChoices("quantity", "qty"))
     unit_code: Optional[str] = Field(
@@ -592,6 +592,10 @@ def commit_receipt(
             status_code=status.HTTP_409_CONFLICT,
             detail="Không thể ghi chứng từ; hóa đơn có thể đã được nhập trước đó.",
         ) from exc
+    except Exception:
+        db.rollback()
+        logger.exception("Unexpected error while committing receipt for kitchen %s", kitchen_id)
+        raise
 
 
 @router.post("/receipts/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
