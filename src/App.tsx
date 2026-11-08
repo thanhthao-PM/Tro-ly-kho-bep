@@ -20,6 +20,8 @@ export const App: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [storeVersion, setStoreVersion] = useState<number>(0);
+  const [invoiceRefreshKey, setInvoiceRefreshKey] = useState(0);
+  const [scanBusinessDate, setScanBusinessDate] = useState<string | undefined>();
 
   // Modals Visibility States
   const [isScanOpen, setIsScanOpen] = useState(false);
@@ -59,7 +61,8 @@ export const App: React.FC = () => {
   };
 
   // Modal Triggers
-  const handleOpenScan = () => {
+  const handleOpenScan = (businessDate?: string) => {
+    setScanBusinessDate(businessDate);
     setIsScanOpen(true);
   };
 
@@ -109,7 +112,6 @@ export const App: React.FC = () => {
             onNavigateToAI={() => handleTabChange('ai')}
             onOpenEdit={handleOpenEdit}
             onOpenDetail={handleOpenDetail}
-            onShowToast={showToast}
           />
         )}
 
@@ -138,6 +140,8 @@ export const App: React.FC = () => {
             key={`tk-${storeVersion}`}
             onNavigateToAI={() => handleTabChange('ai')}
             onShowToast={showToast}
+            onOpenScan={(businessDate) => handleOpenScan(businessDate)}
+            invoiceRefreshKey={invoiceRefreshKey}
           />
         )}
       </AppLayout>
@@ -147,6 +151,8 @@ export const App: React.FC = () => {
         isOpen={isScanOpen}
         onClose={() => setIsScanOpen(false)}
         onShowToast={showToast}
+        initialBusinessDate={scanBusinessDate}
+        onReceiptSaved={() => setInvoiceRefreshKey((key) => key + 1)}
       />
 
       {/* 2. Modal Trung tâm thông báo (Notifications Modal) */}

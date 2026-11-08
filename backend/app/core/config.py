@@ -2,6 +2,7 @@
 Cấu hình tập trung cho toàn bộ ứng dụng FastAPI.
 Quản lý các tham số mặc định của Revision 6.3 không bị hardcode rải rác.
 """
+from pathlib import Path
 from typing import List
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     # Gemini OCR for invoice images
     GEMINI_API_KEY: str = ""
     GEMINI_VISION_MODEL: str = "gemini-2.5-flash"
+    INVOICE_STORAGE_DIR: str = str(Path(__file__).resolve().parents[2] / "storage" / "invoices")
 
     # CORS
     CORS_ORIGINS: List[str] = [

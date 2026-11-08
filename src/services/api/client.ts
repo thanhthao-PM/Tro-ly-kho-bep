@@ -7,6 +7,7 @@ import { ErrorResponse } from '../../types';
 const defaultApiPort = typeof window !== 'undefined' && window.location.port === '3001' ? '8001' : '8000';
 const defaultApiHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${defaultApiHost}:${defaultApiPort}/api/v1`;
+export const API_BASE_URL = BASE_URL;
 
 export interface RequestOptions extends RequestInit {
   idempotencyKey?: string;

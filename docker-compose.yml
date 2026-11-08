@@ -53,10 +53,13 @@ services:
       ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_123456}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      INVOICE_STORAGE_DIR: /app/storage/invoices
       APP_ENV: ${APP_ENV:-development}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost:3001","http://127.0.0.1:3001"]}'
     ports:
       - "8001:8000"
+    volumes:
+      - invoice_data:/app/storage/invoices
 
   # 4. Dịch vụ Frontend React + Node.js Runner
   frontend:
@@ -75,3 +78,5 @@ services:
 volumes:
   postgres_data:
     name: tro_kho_bep_postgres_data
+  invoice_data:
+    name: tro_kho_bep_invoice_data

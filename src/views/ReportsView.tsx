@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   simulationStore,
   formatMoney,
@@ -9,6 +9,7 @@ import {
 import { SegmentedControl } from '../components/common/SegmentedControl';
 import { Icon } from '../components/common/Icon';
 import { StatusTag } from '../components/common/StatusTag';
+import { apiClient, API_BASE_URL } from '../services/api/client';
 
 type PeriodType = 'day' | 'month' | 'quarter' | 'range';
 type ReportSubTab = 'tong' | 'xuly' | 'bo';
@@ -16,14 +17,41 @@ type ReportSubTab = 'tong' | 'xuly' | 'bo';
 interface ReportsViewProps {
   onNavigateToAI: () => void;
   onShowToast: (msg: string) => void;
+  onOpenScan: (businessDate: string) => void;
+  invoiceRefreshKey: number;
 }
 
-export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigateToAI }) => {
+interface DailyInvoiceSummary {
+  business_date: string;
+  invoice_count: number;
+  line_count: number;
+  total_value_vnd: number;
+  invoices: Array<{
+    id: string;
+    original_filename?: string | null;
+    source_format: string;
+    line_count: number;
+    total_value_vnd: number;
+    file_url?: string | null;
+  }>;
+}
+
+const KITCHEN_ID = import.meta.env.VITE_KITCHEN_ID || '00000000-0000-0000-0000-000000000002';
+
+export const ReportsView: React.FC<ReportsViewProps> = ({
+  onNavigateToAI,
+  onOpenScan,
+  invoiceRefreshKey,
+}) => {
   const [periodType, setPeriodType] = useState<PeriodType>('month');
   const [subTab, setSubTab] = useState<ReportSubTab>('tong');
 
   const today = useMemo(() => offsetDays(0), []);
   const [dayVal, setDayVal] = useState(today);
+  const [dailyInvoices, setDailyInvoices] = useState<DailyInvoiceSummary | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(true);
+  const [invoiceError, setInvoiceError] = useState('');
+  const [invoiceRetry, setInvoiceRetry] = useState(0);
   const [monthVal, setMonthVal] = useState(today.slice(0, 7));
 
   // Current quarter: YYYY-Q
@@ -35,6 +63,26 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigateToAI }) => {
 
   const [fromVal, setFromVal] = useState(offsetDays(-6));
   const [toVal, setToVal] = useState(today);
+
+  useEffect(() => {
+    let active = true;
+    setInvoiceLoading(true);
+    setInvoiceError('');
+    void apiClient.get<DailyInvoiceSummary>('/reports/daily-invoices', {
+      kitchen_id: KITCHEN_ID,
+      business_date: dayVal,
+    }).then((summary) => {
+      if (active) setDailyInvoices(summary);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setInvoiceError(error instanceof Error ? error.message : 'Không tải được tổng hợp hóa đơn.');
+    }).finally(() => {
+      if (active) setInvoiceLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [dayVal, invoiceRefreshKey, invoiceRetry]);
 
   // Month options (past 12 months)
   const monthOptions = useMemo(() => {
@@ -197,6 +245,75 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNavigateToAI }) => {
         {periodType === 'range' &&
           '. Đợt là khoảng ngày bạn tự chọn, ví dụ một đợt khuyến mãi hoặc một mùa cao điểm.'}
       </div>
+
+      <section
+        aria-label="Tổng hợp hóa đơn nhập cuối ngày"
+        style={{
+          marginTop: '14px',
+          padding: '14px',
+          border: '1px solid var(--line)',
+          borderRadius: '12px',
+          background: 'var(--card)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+          <div>
+            <div className="section-h3">Hóa đơn nhập cuối ngày</div>
+            <label className="form-label" style={{ marginTop: '6px' }}>
+              Ngày tổng hợp
+              <input
+                type="date"
+                className="ui-input"
+                max={today}
+                value={dayVal}
+                onChange={(event) => setDayVal(event.target.value || today)}
+              />
+            </label>
+          </div>
+          <button type="button" className="ui-btn primary" onClick={() => onOpenScan(dayVal)}>
+            Quét hóa đơn
+          </button>
+        </div>
+
+        {invoiceLoading ? (
+          <p className="note" role="status" style={{ marginTop: '10px' }}>Đang tổng hợp hóa đơn...</p>
+        ) : invoiceError ? (
+          <div role="alert" style={{ marginTop: '10px', color: 'var(--bad-fg)' }}>
+            <p>{invoiceError}</p>
+            <button type="button" className="filter-chip" onClick={() => setInvoiceRetry((value) => value + 1)}>
+              Thử tải lại
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="metrics-grid" style={{ marginTop: '12px' }}>
+              <div><span>Tổng tiền hóa đơn</span><b>{formatMoney(dailyInvoices?.total_value_vnd || 0)}</b></div>
+              <div><span>Số hóa đơn</span><b>{dailyInvoices?.invoice_count || 0}</b></div>
+              <div><span>Dòng nguyên liệu</span><b>{dailyInvoices?.line_count || 0}</b></div>
+            </div>
+            {!dailyInvoices?.invoices.length ? (
+              <p className="note" style={{ marginTop: '10px' }}>Chưa có hóa đơn nhập kho đã xác nhận trong ngày này.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                {dailyInvoices.invoices.map((invoice) => (
+                  <div key={invoice.id} className="product-row" style={{ cursor: 'default' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span className="product-name">{invoice.original_filename || 'Hóa đơn nhập kho'}</span>
+                      <span className="product-sub">
+                        {invoice.line_count} dòng · {invoice.source_format}
+                        {invoice.file_url && (
+                          <> · <a href={`${API_BASE_URL}${invoice.file_url}`} target="_blank" rel="noreferrer">Tải tệp</a></>
+                        )}
+                      </span>
+                    </div>
+                    <StatusTag tone="ok">{formatMoney(invoice.total_value_vnd)}</StatusTag>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {/* Sub Tabs */}
       <SegmentedControl

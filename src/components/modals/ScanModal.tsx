@@ -23,6 +23,8 @@ interface ScanModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowToast: (msg: string) => void;
+  initialBusinessDate?: string;
+  onReceiptSaved?: () => void;
 }
 
 interface ScanInvoiceLine {
@@ -56,43 +58,18 @@ interface ScanSalesLine {
 
 const KITCHEN_ID = import.meta.env.VITE_KITCHEN_ID || '00000000-0000-0000-0000-000000000002';
 
-export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToast }) => {
+export const ScanModal: React.FC<ScanModalProps> = ({
+  isOpen,
+  onClose,
+  onShowToast,
+  initialBusinessDate,
+  onReceiptSaved,
+}) => {
   const [docKind, setDocKind] = useState<'IMPORT' | 'SALES'>('IMPORT');
   const [docDate, setDocDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Invoice lines state
-  const [invoiceLines, setInvoiceLines] = useState<ScanInvoiceLine[]>([
-    {
-      id: 'inv-1',
-      isSelected: true,
-      name: 'cà chua',
-      qty: 2.0,
-      unit: 'kg',
-      cost: 35000,
-      location: 'FRIDGE',
-      expiryDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
-    },
-    {
-      id: 'inv-2',
-      isSelected: true,
-      name: 'trứng gà',
-      qty: 15,
-      unit: 'quả',
-      cost: 3500,
-      location: 'FRIDGE',
-      expiryDate: new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10),
-    },
-    {
-      id: 'inv-3',
-      isSelected: true,
-      name: 'thịt ba rọi',
-      qty: 2.5,
-      unit: 'kg',
-      cost: 150000,
-      location: 'FREEZER',
-      expiryDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-    },
-  ]);
+  const [invoiceLines, setInvoiceLines] = useState<ScanInvoiceLine[]>([]);
 
   // Sales report lines state
   const [salesLines, setSalesLines] = useState<ScanSalesLine[]>([
@@ -123,7 +100,6 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isScanningImage, setIsScanningImage] = useState(false);
   const [cameraError, setCameraError] = useState('');
-  const [showScanChoices, setShowScanChoices] = useState(false);
   const [capturedImageUrl, setCapturedImageUrl] = useState('');
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [catalogIngredients, setCatalogIngredients] = useState<CatalogIngredient[]>([]);
@@ -131,6 +107,11 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const invoiceFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen) setDocDate(initialBusinessDate || new Date().toISOString().slice(0, 10));
+  }, [isOpen, initialBusinessDate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -187,22 +168,40 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
     };
   }, [capturedImageUrl]);
 
-  const handleScanImage = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      onShowToast('Vui lòng chọn file ảnh JPG, PNG hoặc định dạng ảnh được hỗ trợ.');
+  const handleScanFile = async (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const mimeByExtension: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      pdf: 'application/pdf',
+    };
+    const normalizedFile = !file.type || file.type === 'application/octet-stream'
+      ? file
+      : new File([file], file.name, { type: mimeByExtension[extension || ''] || '' });
+    const isImage = normalizedFile.type === 'image/jpeg'
+      || normalizedFile.type === 'image/png'
+      || normalizedFile.type === 'image/webp';
+    const isImageOrPdf = isImage || normalizedFile.type === 'application/pdf';
+    const isTabular = extension === 'csv' || extension === 'xlsx';
+    if (!isImageOrPdf && !isTabular) {
+      onShowToast('Chỉ hỗ trợ ảnh JPG, PNG, WebP, PDF, CSV hoặc XLSX.');
       return;
     }
 
     stopCamera();
     setCameraError('');
-    setShowScanChoices(false);
-    setSelectedImageFile(file);
-    setCapturedImageUrl(URL.createObjectURL(file));
+    setDocKind('IMPORT');
+    setSelectedImageFile(normalizedFile);
+    setCapturedImageUrl(isImage ? URL.createObjectURL(normalizedFile) : '');
+    setInvoiceLines([]);
     setIsScanningImage(true);
 
     try {
       const formData = new FormData();
-      formData.append('file', file, file.name);
+      formData.append('file', normalizedFile, normalizedFile.name);
+      const endpoint = isTabular ? '/documents/parse-invoice-file' : '/documents/scan-invoice-image';
       const result = await apiClient.request<{ lines?: Array<{
         name?: string;
         qty?: number;
@@ -211,14 +210,14 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
         location?: string;
         expiry_date?: string | null;
         ingredient_id?: string | null;
-      }>; message?: string }>('/documents/scan-invoice-image', {
+      }>; message?: string }>(endpoint, {
         method: 'POST',
         body: formData,
         params: { kitchen_id: KITCHEN_ID },
       });
 
       if (!Array.isArray(result.lines) || result.lines.length === 0) {
-        throw new Error(result.message || 'Không tìm thấy dòng nguyên liệu trong ảnh.');
+        throw new Error(result.message || 'Không tìm thấy dòng nguyên liệu trong hóa đơn.');
       }
 
       const fallbackExpiry = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -239,11 +238,11 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
 
       setDocKind('IMPORT');
       setInvoiceLines(parsedLines);
-      onShowToast(`Đã quét ${parsedLines.length} dòng từ hóa đơn. Vui lòng kiểm tra lại trước khi xác nhận.`);
+      onShowToast(`Đã đọc ${parsedLines.length} dòng từ hóa đơn. Kiểm tra nguyên liệu rồi xác nhận để lưu vào kho.`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Không thể quét ảnh hóa đơn.';
+      const message = error instanceof Error ? error.message : 'Không thể đọc hóa đơn.';
       setCameraError(`${message} Bạn vẫn có thể nhập hoặc chỉnh sửa các dòng thủ công.`);
-      onShowToast(`Quét ảnh thất bại: ${message}`);
+      onShowToast(`Đọc hóa đơn thất bại: ${message}`);
     } finally {
       setIsScanningImage(false);
     }
@@ -251,7 +250,9 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
 
   const handleStartCamera = async () => {
     setCameraError('');
-    setShowScanChoices(false);
+    setInvoiceLines([]);
+    setSelectedImageFile(null);
+    setCapturedImageUrl('');
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Trình duyệt không hỗ trợ camera. Vui lòng tải ảnh hóa đơn lên.');
       return;
@@ -302,12 +303,17 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
         return;
       }
 
-      void handleScanImage(new File([blob], `invoice-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      void handleScanFile(new File([blob], `invoice-${Date.now()}.jpg`, { type: 'image/jpeg' }));
     }, 'image/jpeg', 0.9);
   };
 
   // Quick Samples
   const handleLoadSample = (sampleType: 'VEGGIE' | 'MEAT' | 'LUNCH') => {
+    setSelectedImageFile(null);
+    setCapturedImageUrl('');
+    setCameraError('');
+    setSelectedImageFile(null);
+    setCapturedImageUrl('');
     if (sampleType === 'VEGGIE') {
       setDocKind('IMPORT');
       setInvoiceLines([
@@ -404,16 +410,7 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-      void handleScanImage(file);
-    } else if (file.name.toLowerCase().includes('xuat') || file.name.toLowerCase().includes('ban')) {
-      handleLoadSample('LUNCH');
-    } else {
-      handleLoadSample('VEGGIE');
-    }
-    if (!file.type.startsWith('image/')) {
-      onShowToast(`Đã nhận file "${file.name}".`);
-    }
+    void handleScanFile(file);
     e.currentTarget.value = '';
   };
 
@@ -481,32 +478,45 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
         const idempotencyKey = typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const receiptPayload = {
+          business_date: docDate,
+          original_filename: selectedImageFile?.name,
+          file_sha256: fileSha256,
+          lines: selectedInvoiceLines.map((line) => ({
+            ingredient_id: line.ingredientId,
+            name: line.name,
+            quantity: line.qty,
+            unit_code: line.unit,
+            unit_cost: line.cost,
+            location: line.location,
+            expiry_date: line.expiryDate || null,
+          })),
+        };
+        let body: BodyInit;
+        let endpoint = '/documents/receipts';
+        if (selectedImageFile) {
+          const formData = new FormData();
+          formData.append('file', selectedImageFile, selectedImageFile.name);
+          formData.append('payload', JSON.stringify(receiptPayload));
+          body = formData;
+          endpoint = '/documents/receipts/upload';
+        } else {
+          body = JSON.stringify(receiptPayload);
+        }
         const result = await apiClient.request<{ summary: { line_count: number; total_value_vnd: number } }>(
-          '/documents/receipts',
+          endpoint,
           {
             method: 'POST',
             params: { kitchen_id: KITCHEN_ID },
             idempotencyKey,
-            body: JSON.stringify({
-              business_date: docDate,
-              original_filename: selectedImageFile?.name,
-              file_sha256: fileSha256,
-              lines: selectedInvoiceLines.map((line) => ({
-                ingredient_id: line.ingredientId,
-                name: line.name,
-                quantity: line.qty,
-                unit_code: line.unit,
-                unit_cost: line.cost,
-                location: line.location,
-                expiry_date: line.expiryDate || null,
-              })),
-            }),
+            body,
           }
         );
 
         onShowToast(`Đã lưu ${result.summary.line_count} dòng nhập kho vào PostgreSQL, tổng giá trị ${formatMoney(result.summary.total_value_vnd)}.`);
         setSelectedImageFile(null);
         setCapturedImageUrl('');
+        onReceiptSaved?.();
         onClose();
       } else {
         if (selectedSalesLines.length === 0) {
@@ -636,55 +646,67 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowScanChoices((visible) => !visible)}
-              aria-expanded={showScanChoices}
-              disabled={isScanningImage || isCameraActive}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-3 text-sm font-bold text-[var(--on-accent)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
-            >
-              <ScanLine size={18} />
-              Quét hóa đơn
-            </button>
-
-            {showScanChoices && (
-              <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Chọn cách quét hóa đơn">
-                <button
-                  type="button"
-                  onClick={() => void handleStartCamera()}
-                  disabled={isScanningImage}
-                  className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--chip)] disabled:opacity-50"
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--chip)] text-[var(--accent-text)]">
-                    <Camera size={20} />
-                  </span>
-                  <span>
-                    <span className="block text-sm font-bold text-[var(--ink)]">Quét bằng camera</span>
-                    <span className="mt-1 block text-[11px] text-[var(--muted)]">Mở camera, căn hóa đơn rồi chụp ảnh.</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => imageInputRef.current?.click()}
-                  disabled={isScanningImage}
-                  className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--chip)] disabled:opacity-50"
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--chip)] text-[var(--accent-text)]">
-                    <Upload size={20} />
-                  </span>
-                  <span>
-                    <span className="block text-sm font-bold text-[var(--ink)]">Gửi ảnh hóa đơn</span>
-                    <span className="mt-1 block text-[11px] text-[var(--muted)]">Chọn ảnh JPG, PNG hoặc WebP từ thiết bị.</span>
-                  </span>
-                </button>
-              </div>
-            )}
+            <div className="grid gap-3 sm:grid-cols-3" role="group" aria-label="Chọn cách nhập hóa đơn">
+              <button
+                type="button"
+                onClick={() => invoiceFileInputRef.current?.click()}
+                disabled={isScanningImage || isCameraActive}
+                className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--chip)] disabled:opacity-50"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--chip)] text-[var(--accent-text)]">
+                  <FileText size={20} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-[var(--ink)]">Chọn tệp hóa đơn</span>
+                  <span className="mt-1 block text-[11px] text-[var(--muted)]">CSV, XLSX, PDF hoặc ảnh.</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={isScanningImage || isCameraActive}
+                className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--chip)] disabled:opacity-50"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--chip)] text-[var(--accent-text)]">
+                  <Upload size={20} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-[var(--ink)]">Chọn hình ảnh</span>
+                  <span className="mt-1 block text-[11px] text-[var(--muted)]">JPG, PNG hoặc WebP.</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleStartCamera()}
+                disabled={isScanningImage || isCameraActive}
+                className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--chip)] disabled:opacity-50"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--chip)] text-[var(--accent-text)]">
+                  <Camera size={20} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-[var(--ink)]">Chụp bằng camera</span>
+                  <span className="mt-1 block text-[11px] text-[var(--muted)]">Chụp và đọc hóa đơn trực tiếp.</span>
+                </span>
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--muted)]">
+              CSV/XLSX được đọc trực tiếp. Đọc ảnh/PDF cần cấu hình GEMINI_API_KEY ở backend. Sau khi kiểm tra các dòng,
+              bấm “Xác nhận nhập kho” để ghi dữ liệu và tệp gốc vào hệ thống.
+            </p>
 
             <input
               ref={imageInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp"
               capture="environment"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <input
+              ref={invoiceFileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.pdf,image/jpeg,image/png,image/webp"
               className="hidden"
               onChange={handleFileUpload}
             />
@@ -717,32 +739,35 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
               </div>
             )}
 
-            {!isCameraActive && capturedImageUrl && (
+            {!isCameraActive && selectedImageFile && (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] p-3">
-                <img
-                  src={capturedImageUrl}
-                  alt="Ảnh hóa đơn đã chọn"
-                  className="max-h-56 max-w-full rounded-lg object-contain"
-                />
+                {capturedImageUrl ? (
+                  <img
+                    src={capturedImageUrl}
+                    alt="Ảnh hóa đơn đã chọn"
+                    className="max-h-56 max-w-full rounded-lg object-contain"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 rounded-lg bg-[var(--bg)] px-4 py-3 text-xs font-medium text-[var(--ink)]">
+                    <FileText size={18} /> {selectedImageFile.name}
+                  </div>
+                )}
                 <div className="flex flex-wrap justify-center gap-2">
                   <button
                     type="button"
-                    onClick={() => selectedImageFile && void handleScanImage(selectedImageFile)}
+                    onClick={() => selectedImageFile && void handleScanFile(selectedImageFile)}
                     disabled={isScanningImage || !selectedImageFile}
                     className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-[var(--on-accent)] disabled:opacity-50"
                   >
-                    <RotateCw size={14} /> Quét lại ảnh này
+                    <RotateCw size={14} /> Quét lại tệp này
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowScanChoices(true);
-                      imageInputRef.current?.click();
-                    }}
+                    onClick={() => invoiceFileInputRef.current?.click()}
                     disabled={isScanningImage}
                     className="rounded-lg border border-[var(--line)] px-3 py-2 text-xs font-semibold text-[var(--ink)] disabled:opacity-50"
                   >
-                    Chọn ảnh khác
+                    Chọn tệp khác
                   </button>
                 </div>
               </div>
@@ -750,27 +775,17 @@ export const ScanModal: React.FC<ScanModalProps> = ({ isOpen, onClose, onShowToa
             {catalogError && <p role="alert" className="text-xs text-[var(--bad-fg)]">{catalogError}</p>}
             {isScanningImage && (
               <p role="status" className="flex items-center gap-2 text-xs font-medium text-[var(--accent-text)]">
-                <RotateCw size={14} className="animate-spin" /> Đang gửi ảnh và quét hóa đơn...
+                <RotateCw size={14} className="animate-spin" /> Đang gửi tệp và quét hóa đơn...
               </p>
             )}
             {cameraError && <p role="alert" className="text-xs text-[var(--bad-fg)]">{cameraError}</p>}
+            {!invoiceLines.length && !isScanningImage && (
+              <p className="text-xs text-[var(--muted)]">
+                Chưa có dòng hóa đơn. Chọn tệp, hình ảnh, camera hoặc “Thêm dòng” để nhập thủ công.
+              </p>
+            )}
           </section>
         )}
-
-        {/* Existing CSV and spreadsheet upload */}
-        <label className="border-2 border-dashed border-[var(--line)] hover:border-[var(--accent)] bg-[var(--bg)]/40 hover:bg-[var(--bg)] p-4 rounded-xl flex items-center justify-center gap-3 cursor-pointer transition-colors text-center">
-          <Upload size={20} className="text-[var(--accent-text)]" />
-          <div className="text-left">
-            <span className="text-xs font-semibold text-[var(--ink)] block">Tải file CSV hoặc Excel</span>
-            <span className="text-[11px] text-[var(--muted)]">Ảnh hóa đơn có thể chụp bằng camera hoặc tải ở mục quét phía trên.</span>
-          </div>
-          <input
-            type="file"
-            accept=".csv, .xlsx, .xls"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-        </label>
 
         {/* Interactive Lines Table */}
         <div className="space-y-2">

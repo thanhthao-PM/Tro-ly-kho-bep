@@ -12,14 +12,12 @@ interface KhoViewProps {
   onNavigateToAI: () => void;
   onOpenEdit: () => void;
   onOpenDetail: (productName: string) => void;
-  onShowToast: (msg: string) => void;
 }
 
 export const KhoView: React.FC<KhoViewProps> = ({
   onNavigateToAI,
   onOpenEdit,
   onOpenDetail,
-  onShowToast,
 }) => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -48,17 +46,6 @@ export const KhoView: React.FC<KhoViewProps> = ({
     });
     return counts;
   }, [allProducts]);
-
-  const handleReset = () => {
-    if (window.confirm('Đặt lại toàn bộ dữ liệu demo về ban đầu?')) {
-      simulationStore.resetDemo();
-      setSearch('');
-      setDateFilter('all');
-      setSortBy('exp');
-      setLocationFilter('all');
-      onShowToast('Đã đặt lại dữ liệu demo ban đầu.');
-    }
-  };
 
   return (
     <div>
@@ -207,18 +194,6 @@ export const KhoView: React.FC<KhoViewProps> = ({
             })}
           </div>
         )}
-      </div>
-
-      {/* Reset Demo Data Button */}
-      <div style={{ marginTop: '24px', textAlign: 'center' }}>
-        <button
-          type="button"
-          className="ui-btn outline"
-          style={{ minHeight: '38px', padding: '0 16px', fontSize: '12px' }}
-          onClick={handleReset}
-        >
-          Đặt lại dữ liệu demo ban đầu
-        </button>
       </div>
 
       <div className="fab-space" />

@@ -299,6 +299,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     display: none;
   }
 
+  .desktop-upload-btn {
+    display: flex;
+  }
+
   .fab-btn {
     right: 32px;
     bottom: 28px;
@@ -316,6 +320,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 @media (max-width: 899px) {
+  .desktop-upload-btn {
+    display: none;
+  }
+
   .main-content {
     padding: 0 max(20px, calc((100% - 720px) / 2)) 24px;
   }

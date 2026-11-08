@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from '../common/Icon';
+import { FileText, Image } from 'lucide-react';
 
 interface HeaderProps {
   unreadCount: number;
@@ -22,6 +23,26 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="top-bar-actions">
+        <button
+          type="button"
+          className="top-btn desktop-upload-btn"
+          onClick={onOpenScan}
+          aria-label="Tải tệp hóa đơn lên"
+        >
+          <FileText size={18} />
+          <span>Tải tệp</span>
+        </button>
+
+        <button
+          type="button"
+          className="top-btn desktop-upload-btn"
+          onClick={onOpenScan}
+          aria-label="Tải hình ảnh hóa đơn lên"
+        >
+          <Image size={18} />
+          <span>Tải ảnh</span>
+        </button>
+
         <button
           type="button"
           className="top-btn"

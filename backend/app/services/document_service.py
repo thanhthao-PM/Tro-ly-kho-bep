@@ -24,6 +24,30 @@ from app.services.sales_service import SalesService, SaleLineItemInput
 class DocumentService:
 
     @staticmethod
+    def _parse_csv_number(
+        value: str,
+        *,
+        decimal_dot: bool = False,
+        decimal_comma: bool = False,
+    ) -> Decimal:
+        normalized = value.strip().replace(" ", "")
+        if "," in normalized and "." in normalized:
+            decimal_separator = "," if normalized.rfind(",") > normalized.rfind(".") else "."
+            grouping_separator = "." if decimal_separator == "," else ","
+            normalized = normalized.replace(grouping_separator, "").replace(decimal_separator, ".")
+        elif "," in normalized:
+            normalized = normalized.replace(
+                ",",
+                "." if decimal_comma or len(normalized.rsplit(",", 1)[-1]) != 3 else "",
+            )
+        elif "." in normalized:
+            normalized = normalized.replace(
+                ".",
+                "" if not decimal_dot and len(normalized.rsplit(".", 1)[-1]) == 3 else ".",
+            )
+        return Decimal(normalized)
+
+    @staticmethod
     def calculate_file_hash(content_bytes: bytes) -> str:
         return hashlib.sha256(content_bytes).hexdigest()
 
@@ -33,7 +57,9 @@ class DocumentService:
         Phân tích nội dung file CSV thành danh sách các dòng chứng từ thô.
         """
         lines: List[Dict[str, Any]] = []
-        reader = csv.reader(io.StringIO(csv_content), delimiter=',', skipinitialspace=True)
+        sample = next((line for line in csv_content.splitlines() if line.strip()), "")
+        delimiter = max((",", ";", "\t"), key=sample.count)
+        reader = csv.reader(io.StringIO(csv_content), delimiter=delimiter, skipinitialspace=True)
 
         for row_idx, row in enumerate(reader, start=1):
             if not row or not any(row):
@@ -45,22 +71,26 @@ class DocumentService:
 
             name = cleaned[0]
             try:
-                qty = Decimal(cleaned[1].replace(',', '.'))
-            except Exception:
+                qty = DocumentService._parse_csv_number(
+                    cleaned[1], decimal_dot=True, decimal_comma=True
+                )
+            except (ArithmeticError, ValueError):
                 continue
 
-            if qty <= Decimal("0"):
+            if not qty.is_finite() or qty <= Decimal("0"):
                 continue
 
             if kind == "IMPORT_INVOICE":
                 unit = cleaned[2] if len(cleaned) > 2 and not cleaned[2].replace('.', '').isdigit() else None
                 cost_idx = 3 if unit else 2
-                cost = Decimal("0")
-                if len(cleaned) > cost_idx:
-                    try:
-                        cost = Decimal(cleaned[cost_idx].replace(',', '.'))
-                    except Exception:
-                        cost = Decimal("0")
+                if len(cleaned) <= cost_idx:
+                    continue
+                try:
+                    cost = DocumentService._parse_csv_number(cleaned[cost_idx])
+                except (ArithmeticError, ValueError):
+                    continue
+                if not cost.is_finite() or cost < Decimal("0"):
+                    continue
 
                 lines.append({
                     "line_number": row_idx,
@@ -91,6 +121,8 @@ class DocumentService:
         lines: List[Dict[str, Any]],
         file_sha256: Optional[str] = None,
         original_filename: Optional[str] = None,
+        storage_key: Optional[str] = None,
+        source_format: Optional[str] = None,
         actor_id: Optional[str] = None
     ) -> Document:
         """
@@ -105,17 +137,21 @@ class DocumentService:
         doc = Document(
             kitchen_id=kitchen_uuid,
             kind="IMPORT_INVOICE",
-            source_format=(
+            source_format=source_format or (
                 "IMAGE" if original_filename and original_filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+                else "PDF" if original_filename and original_filename.lower().endswith(".pdf")
                 else "CSV" if original_filename and original_filename.lower().endswith(".csv")
                 else "XLSX" if original_filename and original_filename.lower().endswith((".xls", ".xlsx"))
                 else "MANUAL"
             ),
             status="CONFIRMED",
-            ocr_status="DONE" if original_filename and original_filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")) else "NOT_APPLICABLE",
+            ocr_status="DONE" if source_format in {"IMAGE", "PDF"} or (
+                original_filename and original_filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".pdf"))
+            ) else "NOT_APPLICABLE",
             business_date=business_date,
             original_filename=original_filename,
             file_sha256=file_sha256,
+            storage_key=storage_key,
             created_by=actor_id,
             confirmed_at=datetime.utcnow()
         )

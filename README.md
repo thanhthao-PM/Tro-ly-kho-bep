@@ -40,7 +40,7 @@ Chỉ với **1 câu lệnh duy nhất**, toàn bộ hệ thống gồm PostgreS
 ```bash
 cp .env.example .env
 ```
-*(Tùy chọn: Nhập `GEMINI_API_KEY` của bạn vào file `.env` nếu muốn sử dụng mô hình LLM từ Google AI Studio).*
+Để đọc ảnh/PDF bằng AI, điền `GEMINI_API_KEY` trong file `.env` ở thư mục gốc. CSV/XLSX có thể đọc trực tiếp mà không cần API key.
 
 ### Bước 2: Khởi chạy Docker Compose
 ```bash
@@ -54,7 +54,11 @@ docker compose up --build -d
 
 ### Quét hóa đơn nhập kho
 
-Trong file `.env` ở thư mục gốc, điền `GEMINI_API_KEY` để bật bóc tách ảnh bằng Gemini. Nếu chưa có key hoặc dịch vụ AI không truy cập được, modal vẫn cho nhập và chọn nguyên liệu thủ công. Sau khi xác nhận, backend tạo chứng từ nhập, dòng chứng từ, lô hàng và biến động tồn kho trong PostgreSQL. Để áp dụng biến môi trường mới, chạy lại `docker compose up --build -d`.
+Trong giao diện **Quét**, chọn một trong các cách:
+- **Chọn tệp hóa đơn**: CSV, XLSX, PDF hoặc ảnh JPG/PNG/WebP.
+- **Chọn hình ảnh** hoặc **Chụp bằng camera**: ảnh được đọc bằng Gemini.
+
+CSV/XLSX phải có các cột theo thứ tự `Tên nguyên liệu, Số lượng, Đơn vị, Đơn giá` (có thể có dòng tiêu đề; hỗ trợ dấu phẩy/chấm thập phân và phân cách cột bằng dấu phẩy hoặc chấm phẩy). Ảnh/PDF cần có `GEMINI_API_KEY` trong `.env`; nếu thiếu, ứng dụng sẽ báo rõ và vẫn cho nhập dòng thủ công. Sau khi kiểm tra các dòng, chọn nguyên liệu trong danh mục rồi bấm **Xác nhận nhập kho**. Chỉ bước xác nhận mới ghi chứng từ, dòng hàng, lô tồn và biến động kho vào PostgreSQL; tệp gốc được giữ trong Docker volume `invoice_data`. Sau khi thêm API key, khởi động lại backend bằng `docker compose up --build -d backend`.
 
 ### Dừng hệ thống:
 ```bash
@@ -130,7 +134,7 @@ CREATE DATABASE kitchen_inventory;
 
 | Tên biến | Mặc định | Bắt buộc | Mô tả |
 | :--- | :--- | :---: | :--- |
-| `GEMINI_API_KEY` | *(trống)* | Không | API Key từ Google AI Studio. Nếu để trống, hệ thống kích hoạt bộ quy tắc Rule-based Grounding. |
+| `GEMINI_API_KEY` | *(trống)* | Không | API Key Google AI Studio, bắt buộc nếu muốn đọc hóa đơn từ ảnh/PDF. CSV/XLSX và nhập tay không cần key. |
 | `PORT` | `3000` | Có | Cổng dịch vụ chạy ứng dụng Web Frontend. |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres_password_123@localhost:5432/kitchen_inventory` | Có | URL kết nối PostgreSQL qua SQLAlchemy 2.x (Sync driver `psycopg 3`). |
 | `ADMIN_DATABASE_URL` | `postgresql+psycopg://postgres:postgres_password_123@localhost:5432/kitchen_inventory` | Có | URL dành riêng cho migration Alembic (quyền quản trị DDL). |
@@ -199,7 +203,7 @@ CREATE DATABASE kitchen_inventory;
 
 ### Q4: Trợ lý AI báo "Cơ sở: rule_based" thay vì LLM bên ngoài?
 **Xử lý**:
-- Kiểm tra biến môi trường `GEMINI_API_KEY` trong file `.env`. Nếu key chưa được cấu hình, hệ thống mặc định kích hoạt bộ quy tắc nội bộ để đảm bảo ứng dụng luôn phản hồi chính xác 100% dựa trên số liệu kho thật mà không bị gián đoạn.
+- Nếu quét ảnh/PDF báo thiếu `GEMINI_API_KEY`, thêm key vào `.env` ở thư mục gốc rồi chạy `docker compose up --build -d backend`. CSV/XLSX không cần key.
 
 ---
 

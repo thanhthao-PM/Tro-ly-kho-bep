@@ -65,7 +65,11 @@
 - `GET /stock-movements`: Lịch sử biến động sổ cái kho (Query: `from`, `to`, `type`, `ingredient_id`, `cursor`).
 
 ### 2.4 Chứng từ Nhập & Xuất (Documents)
-- `POST /documents`: Tạo chứng từ mới qua upload multipart (file CSV/XLSX/ảnh) hoặc JSON thủ công.
+- `POST /documents/scan-invoice-image`: Quét ảnh JPEG/PNG/WebP hoặc PDF hóa đơn nhập (tối đa 10 MB).
+- `POST /documents/parse-invoice-file`: Đọc CSV/XLSX (tối đa 10 MB) có cột tên, số lượng, đơn vị và đơn giá.
+- `POST /documents/receipts/upload`: Xác nhận nhập kho bằng multipart gồm `file` và `payload` (metadata JSON); giữ tệp gốc để tải lại.
+- `GET /documents/{id}/file`: Tải tệp hóa đơn gốc (`kitchen_id` query bắt buộc).
+- `POST /documents/receipts`: Xác nhận nhập kho thủ công hoặc không kèm tệp.
 - `GET /documents`: Danh sách chứng từ.
 - `GET /documents/{id}`: Chi tiết chứng từ và các dòng chi tiết (`document_lines`).
 - `POST /documents/{id}/lines`: Thêm dòng mới vào chứng từ nháp (`DRAFT`).
@@ -95,6 +99,7 @@
 - `POST /notifications/read`: Đánh dấu đã đọc các thông báo (Body: `{ "keys": string[], "all": boolean }`).
 
 ### 2.8 Báo cáo & Bổ sung hàng (Reports & Replenishment)
+- `GET /reports/daily-invoices`: Tổng số hóa đơn, dòng nguyên liệu và tổng tiền nhập kho theo ngày (`kitchen_id`, `business_date`); trả kèm danh sách và đường dẫn tải tệp đã lưu.
 - `GET /reports/summary`: Báo cáo tài chính kỳ kinh doanh (Query: `from`, `to`). Trả về Doanh thu bán, Doanh thu thanh lý, Giá vốn thực tế, Giá vốn ước tính, Chi phí huỷ, Chi phí quyên góp, Lãi gộp tách 2 dòng, cùng 2 cờ `has_open_shortages` và `all_actual`.
 - `GET /reports/waste`: Báo cáo phân tích hao hụt theo lý do và mặt hàng.
 - `GET /reports/dishes`: Báo cáo hiệu quả sinh lời chi tiết từng món ăn.
