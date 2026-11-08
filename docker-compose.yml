@@ -6,14 +6,13 @@ services:
   # 1. Cơ sở dữ liệu PostgreSQL 16 (Lưu trữ bền vững)
   postgres:
     image: postgres:16-alpine
-    container_name: kitchen_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password_123}
       POSTGRES_DB: ${POSTGRES_DB:-kitchen_inventory}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +26,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: kitchen_migration
+
     restart: "no"
     depends_on:
       postgres:
@@ -42,7 +41,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: kitchen_backend
+
     restart: unless-stopped
     depends_on:
       postgres:
@@ -53,17 +52,17 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
       ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password_123}@postgres:5432/${POSTGRES_DB:-kitchen_inventory}
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_123456}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       APP_ENV: ${APP_ENV:-development}
-      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}'
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost:3001","http://127.0.0.1:3001"]}'
     ports:
-      - "8000:8000"
+      - "8001:8000"
 
   # 4. Dịch vụ Frontend React + Node.js Runner
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: kitchen_frontend
     restart: unless-stopped
     depends_on:
       - backend
@@ -71,8 +70,8 @@ services:
       PORT: 3000
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
-      - "3000:3000"
+      - "3001:3000"
 
 volumes:
   postgres_data:
-    name: kitchen_postgres_data
+    name: tro_kho_bep_postgres_data

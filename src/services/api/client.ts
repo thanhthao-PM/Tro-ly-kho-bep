@@ -4,7 +4,9 @@
  */
 import { ErrorResponse } from '../../types';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const defaultApiPort = typeof window !== 'undefined' && window.location.port === '3001' ? '8001' : '8000';
+const defaultApiHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${defaultApiHost}:${defaultApiPort}/api/v1`;
 
 export interface RequestOptions extends RequestInit {
   idempotencyKey?: string;
@@ -35,8 +37,9 @@ class ApiClient {
       }
     }
 
+    const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...((customHeaders as Record<string, string>) || {}),
     };
 
@@ -55,13 +58,16 @@ class ApiClient {
 
     if (!response.ok) {
       let errorBody: ErrorResponse | null = null;
+      let detailMessage = '';
       try {
         errorBody = await response.json();
+        const detail = (errorBody as ErrorResponse & { detail?: unknown }).detail;
+        if (typeof detail === 'string') detailMessage = detail;
       } catch {
         // Response không phải JSON
       }
 
-      const errorMessage = errorBody?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
+      const errorMessage = errorBody?.error?.message || detailMessage || `HTTP ${response.status}: ${response.statusText}`;
       const error = new Error(errorMessage) as Error & {
         status: number;
         code?: string;

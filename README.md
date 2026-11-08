@@ -48,9 +48,13 @@ docker compose up --build -d
 ```
 
 ### Bước 3: Truy cập ứng dụng
-- **Giao diện người dùng (Frontend)**: [http://localhost:3000](http://localhost:3000)
-- **Tài liệu API Swagger (Backend)**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Kiểm tra trạng thái sức khỏe (Health Check)**: [http://localhost:3000/api/health](http://localhost:3000/api/health)
+- **Giao diện người dùng (Frontend)**: [http://localhost:3001](http://localhost:3001)
+- **Tài liệu API Swagger (Backend)**: [http://localhost:8001/docs](http://localhost:8001/docs)
+- **Kiểm tra trạng thái sức khỏe (Health Check)**: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+
+### Quét hóa đơn nhập kho
+
+Trong file `.env` ở thư mục gốc, điền `GEMINI_API_KEY` để bật bóc tách ảnh bằng Gemini. Nếu chưa có key hoặc dịch vụ AI không truy cập được, modal vẫn cho nhập và chọn nguyên liệu thủ công. Sau khi xác nhận, backend tạo chứng từ nhập, dòng chứng từ, lô hàng và biến động tồn kho trong PostgreSQL. Để áp dụng biến môi trường mới, chạy lại `docker compose up --build -d`.
 
 ### Dừng hệ thống:
 ```bash
